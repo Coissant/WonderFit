@@ -82,7 +82,7 @@ class DashboardView {
 
         <div class="calendar-nav-bar">
           <button class="icon-btn" data-act="prev-month" aria-label="Previous month">${icon('chevronLeft', 20)}</button>
-          <button class="calendar-month-title" data-act="this-month">${MONTHS[this.currentMonth]} ${this.currentYear}</button>
+          <h2 class="calendar-month-title" data-act="this-month" role="button" tabindex="0" title="Tap to jump to current month">${MONTHS[this.currentMonth]} ${this.currentYear}</h2>
           <button class="icon-btn" data-act="next-month" aria-label="Next month">${icon('chevronRight', 20)}</button>
         </div>
 
@@ -123,11 +123,21 @@ class DashboardView {
       const plan = this.getPlan(dateStr);
       let statusClass = 'status-rest';
       let tag = 'Rest';
-      if (done) { statusClass = 'status-completed'; tag = 'Done ✓'; }
-      else if (plan && !plan.day.rest) { statusClass = 'status-scheduled'; tag = plan.day.name; }
+      let fullTitle = `${d} — Rest Day`;
+
+      if (done) {
+        statusClass = 'status-completed';
+        tag = 'Done ✓';
+        fullTitle = `${d} — Completed: ${done.title || 'Workout'}`;
+      } else if (plan && !plan.day.rest) {
+        statusClass = 'status-scheduled';
+        tag = plan.day.name.replace(/\s+(Day|Workout)$/i, '');
+        if (tag.length > 7) tag = tag.slice(0, 6) + '…';
+        fullTitle = `${d} — Scheduled: ${plan.day.name}`;
+      }
 
       cells += `
-        <button class="cal-cell ${statusClass} ${dateStr === todayStr ? 'today' : ''} ${dateStr === this.selectedDate ? 'selected' : ''}" data-date="${dateStr}">
+        <button type="button" class="cal-cell ${statusClass} ${dateStr === todayStr ? 'today' : ''} ${dateStr === this.selectedDate ? 'selected' : ''}" data-date="${dateStr}" title="${esc(fullTitle)}" aria-label="${esc(fullTitle)}">
           <span class="cal-day-num">${d}</span>
           <span class="cal-tag">${esc(tag)}</span>
         </button>`;

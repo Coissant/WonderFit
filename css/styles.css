@@ -33,7 +33,8 @@
   --c-sug: #FF375F;
   --c-sod: #40C8E0;
 
-  --tab-bar-height: 64px;
+  --tab-bar-height: 52px;
+  --tab-safe-bottom: max(8px, calc(env(safe-area-inset-bottom, 0px) - 16px));
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;
@@ -64,7 +65,9 @@
 
 html, body {
   width: 100%;
-  height: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
   background-color: var(--bg);
   color: var(--text);
   font-family: var(--font-family);
@@ -80,7 +83,7 @@ body.booting #app {
 }
 
 #app {
-  min-height: 100%;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   transition: opacity 0.2s ease-in;
@@ -104,7 +107,7 @@ input, select, textarea {
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
-  padding-bottom: calc(var(--tab-bar-height) + var(--safe-bottom) + 16px);
+  padding-bottom: calc(var(--tab-bar-height) + var(--tab-safe-bottom) + 16px);
 }
 
 .view {
@@ -176,8 +179,8 @@ input, select, textarea {
   left: 0;
   right: 0;
   z-index: 50;
-  height: calc(var(--tab-bar-height) + var(--safe-bottom));
-  padding-bottom: var(--safe-bottom);
+  height: calc(var(--tab-bar-height) + var(--tab-safe-bottom));
+  padding-bottom: var(--tab-safe-bottom);
   display: flex;
   justify-content: space-around;
   align-items: center;
@@ -459,7 +462,7 @@ input, select, textarea {
    ========================================================================== */
 .rest-timer {
   position: fixed;
-  bottom: calc(var(--tab-bar-height) + var(--safe-bottom) + 12px);
+  bottom: calc(var(--tab-bar-height) + var(--tab-safe-bottom) + 12px);
   left: 16px;
   right: 16px;
   max-width: 440px;
@@ -979,11 +982,32 @@ input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 4px;
 }
 
 .calendar-month-title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
+  color: var(--text);
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 4px 8px !important;
+  margin: 0 !important;
+  text-align: center;
+  letter-spacing: -0.01em;
+  -webkit-tap-highlight-color: transparent !important;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
+.calendar-month-title:focus,
+.calendar-month-title:active {
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .month-stats-row {
@@ -1013,29 +1037,49 @@ input, select, textarea {
 }
 
 .calendar-card {
-  padding: 12px;
+  padding: 12px 6px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .calendar-weekdays-row {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
   text-align: center;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   text-transform: uppercase;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.calendar-weekdays-row span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calendar-days-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .cal-cell {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
   aspect-ratio: 1;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1043,26 +1087,53 @@ input, select, textarea {
   cursor: pointer;
   position: relative;
   border: 1px solid transparent;
-  transition: transform 0.1s ease;
+  padding: 2px 1px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  font-size: 12px !important;
+  background: none;
+  line-height: 1;
+  transition: transform 0.1s ease, background-color 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cal-cell:active {
   transform: scale(0.92);
 }
 
+.cal-cell-empty {
+  aspect-ratio: 1;
+  min-width: 0 !important;
+  width: 100% !important;
+  visibility: hidden;
+  pointer-events: none;
+  box-sizing: border-box !important;
+}
+
 .cal-day-num {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px !important;
+  font-weight: 700;
+  line-height: 1.1;
+  pointer-events: none;
 }
 
 .cal-tag {
-  font-size: 8px;
+  font-size: 7.5px !important;
   font-weight: 700;
   text-transform: uppercase;
-  max-width: 90%;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
+  display: block;
+  line-height: 1;
+  padding: 0 1px;
+  box-sizing: border-box;
+  pointer-events: none;
+  margin-top: 2px;
 }
 
 .cal-cell.status-completed {
@@ -2052,4 +2123,33 @@ input, select, textarea {
 .api-key-row.no-pad {
   padding: 0;
 }
+
+/* ==========================================================================
+   MOBILE RESPONSIVE TWEAKS FOR NARROW SCREENS (<= 380px)
+   ========================================================================== */
+@media (max-width: 380px) {
+  .view-content {
+    padding: 12px 8px;
+  }
+  .calendar-card {
+    padding: 10px 4px;
+  }
+  .calendar-days-grid,
+  .calendar-weekdays-row {
+    gap: 2px;
+  }
+  .cal-cell {
+    border-radius: 4px;
+  }
+  .cal-day-num {
+    font-size: 11.5px !important;
+  }
+  .cal-tag {
+    font-size: 6.5px !important;
+  }
+  .calendar-month-title {
+    font-size: 16px;
+  }
+}
+
 
