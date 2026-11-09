@@ -5,14 +5,20 @@
    - Split Designer: Weekly or Custom Rotation cycle editor with templates
    - Day inspection: view completed stats or click "Start This Workout"
      to immediately load routine into Live Workout Tracker
+   - Edit each split day's AUTO-FILL exercises from the calendar or designer
    ========================================================================== */
 
-import { $, $$, num, round, esc, uid, dateKey, parseDateKey, addDays, longDate, daysBetween, fmtDuration } from '../utils.js';
+import { $, $$, esc, uid, clone, dateKey, longDate, fmtDuration, WEEKDAYS } from '../utils.js';
 import { openSheet, actionSheet, confirmDialog, toast, haptic } from '../ui.js';
 import { icon } from '../icons.js';
-import { repo } from '../store/repository.js';
+import { repo, planForDate } from '../store/repository.js';
 import { SPLIT_TEMPLATES, splitFromTemplate } from '../data/split-templates.js';
+import { openDayExerciseEditor } from '../components/day-exercise-editor.js';
 import { workoutView } from './workout.js';
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+const dayLabel = (split, idx) => (split.type === 'weekly' ? (WEEKDAYS[idx] || `Day ${idx + 1}`) : `Day ${idx + 1}`);
 
 class DashboardView {
   container = null;
@@ -22,604 +28,534 @@ class DashboardView {
   activeSplit = null;
   workouts = [];
   overrides = [];
+  exercises = [];
   settings = null;
 
   async init(container) {
     this.container = container;
+    // Single delegated listener — survives every re-render.
+    this.container.addEventListener('click', (e) => this.onClick(e));
     await this.refresh();
   }
 
   async refresh() {
-    this.settings = await repo.getSettings();
-    this.activeSplit = await repo.getActiveSplit();
-    this.workouts = await repo.getWorkouts();
-    this.overrides = await repo.getAllOverrides();
+    [this.settings, this.activeSplit, this.workouts, this.overrides, this.exercises] = await Promise.all([
+      repo.getSettings(), repo.getActiveSplit(), repo.getWorkouts(), repo.getAllOverrides(), repo.getExercises(),
+    ]);
     this.render();
   }
 
-  render() {
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const monthLabel = `${monthNames[this.currentMonth]} ${this.currentYear}`;
+  exName(id) {
+    return this.exercises.find((e) => e.id === id)?.name || null;
+  }
 
-    // Compute month stats
+  /* ------------------------------------------------------------------------
+     RENDER
+     ------------------------------------------------------------------------ */
+  render() {
     const monthPrefix = `${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}`;
     const monthWorkouts = this.workouts.filter((w) => w.date && w.date.startsWith(monthPrefix));
     const totalMonthVolume = Math.round(monthWorkouts.reduce((t, w) => t + (w.totalVolume || 0), 0));
     const unit = this.settings.weightUnit || 'lbs';
+    const split = this.activeSplit;
+    const trainingDays = split ? split.days.filter((d) => !d.rest).length : 0;
 
     this.container.innerHTML = `
       <div class="view-header">
         <h1 class="view-title">Dashboard & Calendar</h1>
-        <button class="btn btn-secondary btn-sm" id="btn-open-split-designer">
+        <button class="btn btn-secondary btn-sm" data-act="open-designer">
           ${icon('layers', 16)} Split Designer
         </button>
       </div>
 
       <div class="view-content">
-        <!-- TOP SPLIT INFO BANNER -->
         <div class="card split-banner-card">
           <div class="split-banner-left">
             <span class="badge badge-accent">Active Split</span>
-            <h3 class="split-banner-title">${esc(this.activeSplit?.name || 'Push / Pull / Legs / Rest')}</h3>
-            <span class="split-banner-meta">${this.activeSplit?.type === 'weekly' ? 'Weekly (7-Day)' : `${this.activeSplit?.days?.length || 4}-Day Rotation`}</span>
+            <h3 class="split-banner-title">${esc(split?.name || 'No split yet')}</h3>
+            <span class="split-banner-meta">${split
+              ? `${split.type === 'weekly' ? '7-Day Weekly' : `${split.days.length}-Day Rotation`} · ${trainingDays} training day${trainingDays === 1 ? '' : 's'}`
+              : 'Create a split to schedule your month'}</span>
           </div>
-          <button class="btn btn-secondary btn-sm" id="btn-edit-split-quick">Edit</button>
+          <button class="btn btn-secondary btn-sm" data-act="open-designer">${icon('edit', 14)} Edit</button>
         </div>
 
-        <!-- MONTH NAVIGATION -->
         <div class="calendar-nav-bar">
-          <button class="icon-btn" id="btn-cal-prev" aria-label="Previous month">${icon('chevronLeft', 20)}</button>
-          <span class="calendar-month-title">${monthLabel}</span>
-          <button class="icon-btn" id="btn-cal-next" aria-label="Next month">${icon('chevronRight', 20)}</button>
+          <button class="icon-btn" data-act="prev-month" aria-label="Previous month">${icon('chevronLeft', 20)}</button>
+          <button class="calendar-month-title" data-act="this-month">${MONTHS[this.currentMonth]} ${this.currentYear}</button>
+          <button class="icon-btn" data-act="next-month" aria-label="Next month">${icon('chevronRight', 20)}</button>
         </div>
 
-        <!-- MONTH STATS CHIPS -->
         <div class="month-stats-row">
-          <div class="month-stat-chip">
-            <span class="chip-num">${monthWorkouts.length}</span>
-            <span class="chip-label">Workouts</span>
-          </div>
-          <div class="month-stat-chip">
-            <span class="chip-num">${totalMonthVolume.toLocaleString()}</span>
-            <span class="chip-label">${unit} Volume</span>
-          </div>
+          <div class="month-stat-chip"><span class="chip-num">${monthWorkouts.length}</span><span class="chip-label">Workouts</span></div>
+          <div class="month-stat-chip"><span class="chip-num">${totalMonthVolume.toLocaleString()}</span><span class="chip-label">${unit} Volume</span></div>
         </div>
 
-        <!-- INTERACTIVE MONTHLY CALENDAR GRID -->
         <div class="calendar-card card">
-          <div class="calendar-weekdays-row">
-            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-          </div>
-          <div class="calendar-days-grid" id="calendar-days-grid">
-            ${this.renderCalendarGridHtml()}
+          <div class="calendar-weekdays-row">${WEEKDAYS.map((d) => `<span>${d}</span>`).join('')}</div>
+          <div class="calendar-days-grid">${this.renderCalendarGridHtml()}</div>
+          <div class="cal-legend">
+            <span><i class="legend-dot completed"></i>Completed</span>
+            <span><i class="legend-dot scheduled"></i>Scheduled</span>
+            <span><i class="legend-dot rest"></i>Rest</span>
           </div>
         </div>
 
-        <!-- DAY DETAIL CARD (Tapping any day updates this) -->
         <div class="day-detail-wrap" id="day-detail-wrap">
           ${this.renderDayDetailHtml(this.selectedDate)}
         </div>
       </div>
     `;
-
-    this.bindEvents();
   }
 
-  bindEvents() {
-    $('#btn-cal-prev', this.container)?.addEventListener('click', () => {
-      if (this.currentMonth === 0) {
-        this.currentMonth = 11;
-        this.currentYear--;
-      } else {
-        this.currentMonth--;
-      }
-      this.render();
-    });
-
-    $('#btn-cal-next', this.container)?.addEventListener('click', () => {
-      if (this.currentMonth === 11) {
-        this.currentMonth = 0;
-        this.currentYear++;
-      } else {
-        this.currentMonth++;
-      }
-      this.render();
-    });
-
-    $('#btn-open-split-designer', this.container)?.addEventListener('click', () => {
-      this.openSplitDesigner();
-    });
-
-    $('#btn-edit-split-quick', this.container)?.addEventListener('click', () => {
-      this.openSplitDesigner();
-    });
-
-    // Calendar day clicks
-    $$('.cal-cell[data-date]', this.container).forEach((cell) => {
-      cell.addEventListener('click', () => {
-        haptic(20);
-        this.selectedDate = cell.dataset.date;
-        $$('.cal-cell', this.container).forEach((c) => c.classList.remove('selected'));
-        cell.classList.add('selected');
-
-        const detailWrap = $('#day-detail-wrap', this.container);
-        if (detailWrap) {
-          detailWrap.innerHTML = this.renderDayDetailHtml(this.selectedDate);
-          this.bindDayDetailEvents();
-        }
-      });
-    });
-
-    this.bindDayDetailEvents();
-  }
-
-  bindDayDetailEvents() {
-    const detailWrap = $('#day-detail-wrap', this.container);
-    if (!detailWrap) return;
-
-    // "Start This Workout" button
-    $('#btn-start-planned-workout', detailWrap)?.addEventListener('click', async () => {
-      const splitDay = this.getScheduledSplitDayForDate(this.selectedDate);
-      if (splitDay && !splitDay.rest) {
-        // Switch to workout tab
-        document.querySelector('.tab[data-tab="workout"]')?.click();
-        await workoutView.startWorkoutFromSplitDay(splitDay);
-      }
-    });
-
-    // "Repeat Completed Workout"
-    $('#btn-repeat-day-workout', detailWrap)?.addEventListener('click', async () => {
-      const workout = this.getCompletedWorkoutForDate(this.selectedDate);
-      if (workout) {
-        document.querySelector('.tab[data-tab="workout"]')?.click();
-        await workoutView.startWorkoutFromPrevious(workout);
-      }
-    });
-
-    // "Override / Change Routine for this Date"
-    $('#btn-override-day', detailWrap)?.addEventListener('click', () => {
-      this.openDayOverrideSheet(this.selectedDate);
-    });
-  }
-
-  /* ------------------------------------------------------------------------
-     CALENDAR GRID RENDERER
-     ------------------------------------------------------------------------ */
   renderCalendarGridHtml() {
-    const firstDayOfMonth = new Date(this.currentYear, this.currentMonth, 1);
-    const lastDayOfMonth = new Date(this.currentYear, this.currentMonth + 1, 0);
-    const totalDays = lastDayOfMonth.getDate();
-
-    // Monday-based offset (0 = Mon, 6 = Sun)
-    const startWeekday = (firstDayOfMonth.getDay() + 6) % 7;
-
+    const first = new Date(this.currentYear, this.currentMonth, 1);
+    const totalDays = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
+    const startWeekday = (first.getDay() + 6) % 7;
     const todayStr = dateKey();
     let cells = '';
 
-    // Empty cells before day 1
-    for (let i = 0; i < startWeekday; i++) {
-      cells += `<div class="cal-cell cal-cell-empty"></div>`;
-    }
+    for (let i = 0; i < startWeekday; i++) cells += '<div class="cal-cell cal-cell-empty"></div>';
 
     for (let d = 1; d <= totalDays; d++) {
       const dateStr = `${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const isToday = dateStr === todayStr;
-      const isSelected = dateStr === this.selectedDate;
-
-      const completedWorkout = this.getCompletedWorkoutForDate(dateStr);
-      const scheduledDay = this.getScheduledSplitDayForDate(dateStr);
-
+      const done = this.getCompletedWorkoutForDate(dateStr);
+      const plan = this.getPlan(dateStr);
       let statusClass = 'status-rest';
-      let tagText = '';
-
-      if (completedWorkout) {
-        statusClass = 'status-completed';
-        tagText = 'Done ✓';
-      } else if (scheduledDay && !scheduledDay.rest) {
-        statusClass = 'status-scheduled';
-        tagText = scheduledDay.name;
-      } else {
-        statusClass = 'status-rest';
-        tagText = 'Rest';
-      }
+      let tag = 'Rest';
+      if (done) { statusClass = 'status-completed'; tag = 'Done ✓'; }
+      else if (plan && !plan.day.rest) { statusClass = 'status-scheduled'; tag = plan.day.name; }
 
       cells += `
-        <div class="cal-cell ${statusClass} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}" data-date="${dateStr}">
+        <button class="cal-cell ${statusClass} ${dateStr === todayStr ? 'today' : ''} ${dateStr === this.selectedDate ? 'selected' : ''}" data-date="${dateStr}">
           <span class="cal-day-num">${d}</span>
-          <span class="cal-tag">${esc(tagText)}</span>
-        </div>
-      `;
+          <span class="cal-tag">${esc(tag)}</span>
+        </button>`;
     }
-
     return cells;
   }
 
   renderDayDetailHtml(dateStr) {
-    const isToday = dateStr === dateKey();
-    const completedWorkout = this.getCompletedWorkoutForDate(dateStr);
-    const scheduledDay = this.getScheduledSplitDayForDate(dateStr);
+    const completed = this.getCompletedWorkoutForDate(dateStr);
+    const plan = this.getPlan(dateStr);
     const unit = this.settings?.weightUnit || 'lbs';
 
-    if (completedWorkout) {
-      const exCount = completedWorkout.exercises?.length || 0;
-      const totalSets = (completedWorkout.exercises || []).reduce((t, e) => t + (e.sets || []).filter((s) => s.completed).length, 0);
-      const exListHtml = (completedWorkout.exercises || []).map((e) => `
-        <div class="day-exercise-item">
-          <span class="day-ex-name">${esc(e.name)}</span>
-          <span class="day-ex-sets">${(e.sets || []).filter((s) => s.completed).length} sets</span>
-        </div>
-      `).join('');
-
+    if (completed) {
+      const totalSets = (completed.exercises || []).reduce((t, e) => t + (e.sets || []).filter((s) => s.completed).length, 0);
       return `
         <div class="card day-card day-card-completed">
           <div class="day-card-header">
-            <div>
+            <div class="day-card-heading">
               <span class="badge badge-success">Completed Workout</span>
-              <h3 class="day-card-title">${esc(completedWorkout.title || 'Workout')}</h3>
+              <h3 class="day-card-title">${esc(completed.title || 'Workout')}</h3>
               <span class="day-card-date">${longDate(dateStr)}</span>
             </div>
             <div class="day-card-stat">
-              <span class="day-stat-big">${Math.round(completedWorkout.totalVolume || 0).toLocaleString()}</span>
+              <span class="day-stat-big">${Math.round(completed.totalVolume || 0).toLocaleString()}</span>
               <span class="day-stat-unit">${unit} volume</span>
             </div>
           </div>
-
           <div class="day-detail-summary-row">
-            <span>Duration: <strong>${fmtDuration(completedWorkout.durationMs || 0)}</strong></span>
-            <span>Total Sets: <strong>${totalSets}</strong></span>
-            <span>Exercises: <strong>${exCount}</strong></span>
+            <span>Duration <strong>${fmtDuration(completed.durationMs || 0)}</strong></span>
+            <span>Sets <strong>${totalSets}</strong></span>
+            <span>Exercises <strong>${completed.exercises?.length || 0}</strong></span>
           </div>
-
           <div class="day-exercises-preview">
-            ${exListHtml}
+            ${(completed.exercises || []).map((e) => `
+              <div class="day-exercise-item">
+                <span class="day-ex-name">${esc(e.name)}</span>
+                <span class="day-ex-sets">${(e.sets || []).filter((s) => s.completed).length} sets</span>
+              </div>`).join('')}
           </div>
-
           <div class="day-actions-stack">
-            <button class="btn btn-secondary btn-block" id="btn-repeat-day-workout">
-              ${icon('repeat', 18)} Repeat This Workout
-            </button>
+            <button class="btn btn-secondary btn-block" data-act="repeat-day">${icon('repeat', 18)} Repeat This Workout</button>
           </div>
-        </div>
-      `;
+        </div>`;
     }
 
-    if (scheduledDay && !scheduledDay.rest) {
-      const exCount = scheduledDay.exerciseIds?.length || 0;
-
+    if (plan && !plan.day.rest) {
+      const names = (plan.day.exerciseIds || []).map((id) => this.exName(id)).filter(Boolean);
       return `
         <div class="card day-card day-card-scheduled">
           <div class="day-card-header">
-            <div>
-              <span class="badge badge-accent">Scheduled Split Routine</span>
-              <h3 class="day-card-title">${esc(scheduledDay.name)}</h3>
+            <div class="day-card-heading">
+              <span class="badge badge-accent">Scheduled${plan.override ? ' · Swapped' : ''}</span>
+              <h3 class="day-card-title">${esc(plan.day.name)}</h3>
               <span class="day-card-date">${longDate(dateStr)}</span>
             </div>
             <div class="day-card-stat">
-              <span class="day-stat-big">${exCount}</span>
+              <span class="day-stat-big">${names.length}</span>
               <span class="day-stat-unit">exercises</span>
             </div>
           </div>
 
-          <p class="day-card-desc">Scheduled according to your <strong>${esc(this.activeSplit?.name || 'Split')}</strong> schedule.</p>
+          <div class="autofill-head">
+            <span class="autofill-label">Auto-fill exercises</span>
+            <button class="btn-text-accent btn-sm" data-act="edit-day-ex">${icon('edit', 14)} Edit</button>
+          </div>
+          ${names.length
+            ? `<ol class="plan-ex-list">${names.map((n) => `<li>${esc(n)}</li>`).join('')}</ol>`
+            : '<div class="empty-state-text">No exercises assigned yet — tap Edit to add some.</div>'}
 
           <div class="day-actions-stack">
-            <button class="btn btn-primary btn-large btn-block" id="btn-start-planned-workout">
-              ${icon('play', 20)} Start This Workout
-            </button>
-            <button class="btn btn-secondary btn-block" id="btn-override-day">
-              ${icon('edit', 16)} Swap or Change Routine
-            </button>
+            <button class="btn btn-primary btn-large btn-block" data-act="start-planned">${icon('play', 20)} Start This Workout</button>
+            <button class="btn btn-secondary btn-block" data-act="override-day">${icon('repeat', 16)} Swap Routine for This Day</button>
           </div>
-        </div>
-      `;
+        </div>`;
     }
 
-    // Rest Day
     return `
       <div class="card day-card day-card-rest">
         <div class="day-card-header">
-          <div>
+          <div class="day-card-heading">
             <span class="badge badge-subtle">Rest & Recovery</span>
             <h3 class="day-card-title">Rest Day</h3>
             <span class="day-card-date">${longDate(dateStr)}</span>
           </div>
           <span class="rest-icon-large">${icon('moon', 32)}</span>
         </div>
-        <p class="day-card-desc">Allow muscle fibers and nervous system to recover for peak growth.</p>
+        <p class="day-card-desc">${this.activeSplit
+          ? 'Recovery is when the growth happens. Want to train anyway?'
+          : 'No split is active yet. Open the Split Designer to schedule your month.'}</p>
         <div class="day-actions-stack">
-          <button class="btn btn-secondary btn-block" id="btn-override-day">
-            ${icon('dumbbell', 16)} Schedule a Workout on this Day
-          </button>
+          ${this.activeSplit
+            ? `<button class="btn btn-secondary btn-block" data-act="override-day">${icon('dumbbell', 16)} Schedule a Workout on This Day</button>`
+            : `<button class="btn btn-primary btn-block" data-act="open-designer">${icon('layers', 16)} Open Split Designer</button>`}
         </div>
-      </div>
-    `;
+      </div>`;
+  }
+
+  /* ------------------------------------------------------------------------
+     EVENTS (delegated)
+     ------------------------------------------------------------------------ */
+  async onClick(e) {
+    const cell = e.target.closest('.cal-cell[data-date]');
+    if (cell) {
+      haptic(15);
+      this.selectedDate = cell.dataset.date;
+      $$('.cal-cell', this.container).forEach((c) => c.classList.toggle('selected', c === cell));
+      $('#day-detail-wrap', this.container).innerHTML = this.renderDayDetailHtml(this.selectedDate);
+      return;
+    }
+
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+
+    switch (btn.dataset.act) {
+      case 'open-designer':
+        this.openSplitDesigner();
+        break;
+      case 'prev-month':
+        this.currentMonth = (this.currentMonth + 11) % 12;
+        if (this.currentMonth === 11) this.currentYear--;
+        this.render();
+        break;
+      case 'next-month':
+        this.currentMonth = (this.currentMonth + 1) % 12;
+        if (this.currentMonth === 0) this.currentYear++;
+        this.render();
+        break;
+      case 'this-month': {
+        const now = new Date();
+        this.currentYear = now.getFullYear();
+        this.currentMonth = now.getMonth();
+        this.selectedDate = dateKey(now);
+        this.render();
+        break;
+      }
+      case 'start-planned': {
+        const plan = this.getPlan(this.selectedDate);
+        if (plan && !plan.day.rest) {
+          document.querySelector('.tab[data-tab="workout"]')?.click();
+          await workoutView.startWorkoutFromSplitDay(plan.day, plan.split);
+        }
+        break;
+      }
+      case 'repeat-day': {
+        const w = this.getCompletedWorkoutForDate(this.selectedDate);
+        if (w) {
+          document.querySelector('.tab[data-tab="workout"]')?.click();
+          await workoutView.startWorkoutFromPrevious(w);
+        }
+        break;
+      }
+      case 'edit-day-ex': {
+        const plan = this.getPlan(this.selectedDate);
+        if (plan) this.editSavedDayExercises(plan.split, plan.day);
+        break;
+      }
+      case 'override-day':
+        this.openDayOverrideSheet(this.selectedDate);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Edit a saved split day's auto-fill list and persist immediately. */
+  editSavedDayExercises(split, day) {
+    openDayExerciseEditor({
+      title: `${day.name} Exercises`,
+      dayName: day.name,
+      exerciseIds: day.exerciseIds,
+      onSave: async (ids) => {
+        await repo.updateSplitDayExercises(split.id, day.id, ids);
+        toast(`${day.name} will auto-fill ${ids.length} exercise${ids.length === 1 ? '' : 's'}`, { type: 'success' });
+        await this.refresh();
+      },
+    });
   }
 
   getCompletedWorkoutForDate(dateStr) {
     return this.workouts.find((w) => w.date === dateStr);
   }
 
-  getScheduledSplitDayForDate(dateStr) {
-    // Check manual day override first
-    const override = this.overrides.find((o) => o.id === dateStr || o.date === dateStr);
-    if (override) return override;
-
-    const split = this.activeSplit;
-    if (!split || !split.days || split.days.length === 0) return null;
-
-    if (split.type === 'weekly') {
-      const targetDate = parseDateKey(dateStr);
-      const dayOfWeek = (targetDate.getDay() + 6) % 7; // Mon=0, Sun=6
-      return split.days[dayOfWeek] || null;
-    } else {
-      // Rotation cycle
-      const targetDate = parseDateKey(dateStr);
-      const startDate = split.startDate ? parseDateKey(split.startDate) : parseDateKey(dateKey());
-      const diffDays = daysBetween(startDate, targetDate);
-      const cycleLen = split.days.length;
-      const index = ((diffDays % cycleLen) + cycleLen) % cycleLen;
-      return split.days[index] || null;
-    }
+  getPlan(dateStr) {
+    return planForDate(this.activeSplit, this.overrides, dateStr);
   }
 
   /* ------------------------------------------------------------------------
-     SPLIT DESIGNER MODAL
+     SPLIT DESIGNER
      ------------------------------------------------------------------------ */
   async openSplitDesigner() {
-    let currentSplit = this.activeSplit ? clone(this.activeSplit) : splitFromTemplate(SPLIT_TEMPLATES[0]);
-    const allExercises = await repo.getExercises();
+    const savedSplits = await repo.getSplits();
+    let draft = this.activeSplit ? clone(this.activeSplit) : splitFromTemplate(SPLIT_TEMPLATES[0]);
+    let isNew = !this.activeSplit;
 
-    const renderSplitDaysListHtml = () => {
-      return currentSplit.days.map((day, idx) => `
-        <div class="split-day-row card" data-day-idx="${idx}">
-          <div class="split-day-row-header">
-            <span class="split-day-idx-badge">${currentSplit.type === 'weekly' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][idx] || `Day ${idx + 1}` : `Day ${idx + 1}`}</span>
-            <input type="text" class="text-input split-day-name-input" value="${esc(day.name)}" placeholder="Day Name" data-day-idx="${idx}">
-            <label class="toggle-switch-label">
-              <input type="checkbox" class="split-day-rest-toggle" data-day-idx="${idx}" ${day.rest ? 'checked' : ''}>
-              <span>Rest</span>
-            </label>
-            ${currentSplit.type === 'rotation' ? `<button class="icon-btn btn-del-split-day" data-day-idx="${idx}">${icon('trash', 16)}</button>` : ''}
-          </div>
-
-          ${!day.rest ? `
-            <div class="split-day-exercises-box">
-              <div class="split-day-exercises-count">${day.exerciseIds?.length || 0} exercises assigned</div>
-              <button class="btn btn-secondary btn-sm btn-manage-day-ex" data-day-idx="${idx}">Manage Exercises</button>
+    const html = () => {
+      const days = draft.days.map((day, idx) => {
+        const names = (day.exerciseIds || []).map((id) => this.exName(id)).filter(Boolean);
+        return `
+          <div class="split-day-row card ${day.rest ? 'is-rest' : ''}" data-idx="${idx}">
+            <div class="split-day-row-header">
+              <span class="split-day-idx-badge">${dayLabel(draft, idx)}</span>
+              <input type="text" class="text-input split-day-name-input" data-field="day-name" value="${esc(day.name)}" placeholder="${day.rest ? 'Rest' : 'e.g. Legs'}" ${day.rest ? 'disabled' : ''}>
+              <label class="toggle-switch-label">
+                <input type="checkbox" data-field="day-rest" ${day.rest ? 'checked' : ''}>
+                <span>Rest</span>
+              </label>
             </div>
-          ` : ''}
-        </div>
-      `).join('');
-    };
+            ${day.rest ? '' : `
+              <div class="split-day-exercises-box">
+                <div class="split-day-chips">
+                  ${names.length ? names.map((n) => `<span class="ex-chip">${esc(n)}</span>`).join('') : '<span class="text-subtle">No exercises assigned</span>'}
+                </div>
+              </div>`}
+            <div class="split-day-actions">
+              ${day.rest ? '' : `<button class="btn btn-secondary btn-sm" data-act="day-ex">${icon('edit', 14)} Exercises (${names.length})</button>`}
+              ${draft.type === 'rotation' ? `
+                <span class="spacer"></span>
+                <button class="icon-btn sm" data-act="day-up" ${idx === 0 ? 'disabled' : ''} aria-label="Move up">${icon('chevronUp', 16)}</button>
+                <button class="icon-btn sm" data-act="day-down" ${idx === draft.days.length - 1 ? 'disabled' : ''} aria-label="Move down">${icon('chevronDown', 16)}</button>
+                <button class="icon-btn sm danger" data-act="day-del" aria-label="Delete day">${icon('trash', 16)}</button>` : ''}
+            </div>
+          </div>`;
+      }).join('');
 
-    const templatesHtml = SPLIT_TEMPLATES.map((t) => `
-      <button class="template-choice-btn" data-key="${t.key}">
-        <strong>${esc(t.name)}</strong>
-        <span class="text-subtle">${esc(t.description)}</span>
-      </button>
-    `).join('');
+      return `
+        <div class="split-designer-wrap">
+          ${savedSplits.length > 1 ? `
+            <div class="form-group">
+              <label>Your Saved Splits</label>
+              <select class="text-input select-input" data-field="load-split">
+                ${savedSplits.map((s) => `<option value="${s.id}" ${s.id === draft.id ? 'selected' : ''}>${esc(s.name)}${s.isActive ? ' (active)' : ''}</option>`).join('')}
+                ${isNew ? '<option value="" selected>New split (unsaved)</option>' : ''}
+              </select>
+            </div>` : ''}
 
-    const html = `
-      <div class="split-designer-wrap">
-        <div class="form-group">
-          <label>Split Name</label>
-          <input type="text" id="split-designer-name" class="text-input" value="${esc(currentSplit.name)}">
-        </div>
-
-        <div class="form-group">
-          <label>Split Structure</label>
-          <div class="tab-toggle-group" id="split-type-toggle">
-            <button class="toggle-btn ${currentSplit.type === 'weekly' ? 'active' : ''}" data-type="weekly">7-Day Weekly</button>
-            <button class="toggle-btn ${currentSplit.type === 'rotation' ? 'active' : ''}" data-type="rotation">Custom Rotation Cycle</button>
+          <div class="form-group">
+            <label>Split Name</label>
+            <input type="text" class="text-input" data-field="name" value="${esc(draft.name)}">
           </div>
-        </div>
 
-        <div class="section-header">
-          <h4 class="section-title">Quick Presets</h4>
-        </div>
-        <div class="templates-grid">
-          ${templatesHtml}
-        </div>
+          <div class="form-group">
+            <label>Split Structure</label>
+            <div class="tab-toggle-group">
+              <button class="toggle-btn ${draft.type === 'weekly' ? 'active' : ''}" data-act="type" data-type="weekly">7-Day Weekly</button>
+              <button class="toggle-btn ${draft.type === 'rotation' ? 'active' : ''}" data-act="type" data-type="rotation">Custom Rotation</button>
+            </div>
+            <p class="field-hint">${draft.type === 'weekly'
+              ? 'Same routine on the same weekday, every week.'
+              : 'Days cycle in order (e.g. Push → Pull → Legs → Rest) regardless of weekday.'}</p>
+          </div>
 
-        <div class="section-header">
-          <h4 class="section-title">Split Days (${currentSplit.days.length})</h4>
-          ${currentSplit.type === 'rotation' ? `<button class="btn btn-secondary btn-sm" id="btn-add-rotation-day">+ Add Day</button>` : ''}
-        </div>
+          ${draft.type === 'rotation' ? `
+            <div class="form-group">
+              <label>Day 1 of the cycle falls on</label>
+              <input type="date" class="text-input" data-field="start" value="${esc(draft.startDate || dateKey())}">
+            </div>` : ''}
 
-        <div class="split-days-container" id="split-days-container">
-          ${renderSplitDaysListHtml()}
-        </div>
+          <div class="section-header">
+            <h4 class="section-title">Quick Presets</h4>
+          </div>
+          <div class="templates-grid">
+            ${SPLIT_TEMPLATES.map((t) => `
+              <button class="template-choice-btn" data-act="template" data-key="${t.key}">
+                <strong>${esc(t.name)}</strong>
+                <span class="text-subtle">${esc(t.description)}</span>
+              </button>`).join('')}
+          </div>
 
-        <div class="form-actions-stack">
-          <button class="btn btn-primary btn-large btn-block" id="btn-save-split-designer">
-            ${icon('check', 18)} Apply Split to Calendar
-          </button>
-        </div>
-      </div>
-    `;
+          <div class="section-header">
+            <h4 class="section-title">Split Days (${draft.days.length})</h4>
+            ${draft.type === 'rotation' ? `<button class="btn btn-secondary btn-sm" data-act="add-day">${icon('plus', 14)} Add Day</button>` : ''}
+          </div>
+          <div class="split-days-container">${days}</div>
+
+          ${!isNew && savedSplits.length > 1 ? `<button class="btn btn-danger-outline btn-block mt-2" data-act="delete-split">${icon('trash', 16)} Delete This Split</button>` : ''}
+        </div>`;
+    };
 
     const sheet = openSheet({
       title: 'Split Designer',
-      html,
-      onMount: (sheetApi) => {
-        const containerEl = $('#split-days-container', sheetApi.body);
-        const nameInput = $('#split-designer-name', sheetApi.body);
-
-        const bindDaysListEvents = () => {
-          $$('.split-day-name-input', containerEl).forEach((inp) => {
-            inp.addEventListener('input', () => {
-              const idx = Number(inp.dataset.dayIdx);
-              if (currentSplit.days[idx]) currentSplit.days[idx].name = inp.value;
-            });
-          });
-
-          $$('.split-day-rest-toggle', containerEl).forEach((chk) => {
-            chk.addEventListener('change', () => {
-              const idx = Number(chk.dataset.dayIdx);
-              if (currentSplit.days[idx]) {
-                currentSplit.days[idx].rest = chk.checked;
-                if (chk.checked && currentSplit.days[idx].name.toLowerCase() !== 'rest') {
-                  currentSplit.days[idx].name = 'Rest';
-                } else if (!chk.checked && currentSplit.days[idx].name.toLowerCase() === 'rest') {
-                  currentSplit.days[idx].name = `Workout Day ${idx + 1}`;
-                }
-                containerEl.innerHTML = renderSplitDaysListHtml();
-                bindDaysListEvents();
-              }
-            });
-          });
-
-          $$('.btn-del-split-day', containerEl).forEach((btn) => {
-            btn.addEventListener('click', () => {
-              const idx = Number(btn.dataset.dayIdx);
-              currentSplit.days.splice(idx, 1);
-              containerEl.innerHTML = renderSplitDaysListHtml();
-              bindDaysListEvents();
-            });
-          });
-
-          $$('.btn-manage-day-ex', containerEl).forEach((btn) => {
-            btn.addEventListener('click', () => {
-              const idx = Number(btn.dataset.dayIdx);
-              this.openManageSplitDayExercises(currentSplit.days[idx], allExercises, () => {
-                containerEl.innerHTML = renderSplitDaysListHtml();
-                bindDaysListEvents();
-              });
-            });
-          });
-        };
-
-        // Template buttons
-        $$('.template-choice-btn', sheetApi.body).forEach((tBtn) => {
-          tBtn.addEventListener('click', () => {
-            const template = SPLIT_TEMPLATES.find((t) => t.key === tBtn.dataset.key);
-            if (template) {
-              currentSplit = splitFromTemplate(template);
-              nameInput.value = currentSplit.name;
-              $$('#split-type-toggle .toggle-btn', sheetApi.body).forEach((b) => {
-                b.classList.toggle('active', b.dataset.type === currentSplit.type);
-              });
-              containerEl.innerHTML = renderSplitDaysListHtml();
-              bindDaysListEvents();
-              toast(`Loaded ${template.name} template`);
-            }
-          });
-        });
-
-        // Split type toggle
-        $$('#split-type-toggle .toggle-btn', sheetApi.body).forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const type = btn.dataset.type;
-            currentSplit.type = type;
-            $$('#split-type-toggle .toggle-btn', sheetApi.body).forEach((b) => b.classList.remove('active'));
-            btn.classList.add('active');
-
-            if (type === 'weekly' && currentSplit.days.length !== 7) {
-              // Ensure 7 days for weekly
-              const base = currentSplit.days;
-              currentSplit.days = Array.from({ length: 7 }, (_, i) => base[i] || { id: uid(), name: `Day ${i + 1}`, rest: i === 6, exerciseIds: [] });
-            }
-            containerEl.innerHTML = renderSplitDaysListHtml();
-            bindDaysListEvents();
-          });
-        });
-
-        // Add day to rotation
-        $('#btn-add-rotation-day', sheetApi.body)?.addEventListener('click', () => {
-          currentSplit.days.push({
-            id: uid(),
-            name: `Day ${currentSplit.days.length + 1}`,
-            rest: false,
-            exerciseIds: [],
-          });
-          containerEl.innerHTML = renderSplitDaysListHtml();
-          bindDaysListEvents();
-        });
-
-        // Save & Apply
-        $('#btn-save-split-designer', sheetApi.body)?.addEventListener('click', async () => {
-          currentSplit.name = nameInput.value.trim() || 'My Split';
-          currentSplit.isActive = true;
-          await repo.saveSplit(currentSplit);
-          await repo.setActiveSplit(currentSplit.id);
-          this.activeSplit = currentSplit;
-          toast('Split saved & projected across calendar!', { type: 'success' });
-          sheet.close();
-          this.refresh();
-        });
-
-        bindDaysListEvents();
-      },
+      full: true,
+      html: html(),
+      footer: `<button class="btn btn-primary btn-large btn-block" data-act="save">${icon('check', 18)} Save & Apply to Calendar</button>`,
     });
-  }
 
-  openManageSplitDayExercises(splitDay, allExercises, onSaved) {
-    const selectedSet = new Set(splitDay.exerciseIds || []);
+    const rerender = () => {
+      const scroll = sheet.body.scrollTop;
+      sheet.body.innerHTML = html();
+      sheet.body.scrollTop = scroll;
+    };
 
-    const listHtml = allExercises.map((e) => {
-      const isChecked = selectedSet.has(e.id);
-      return `
-        <label class="list-item exercise-checkbox-item">
-          <input type="checkbox" class="ex-check" data-id="${e.id}" ${isChecked ? 'checked' : ''}>
-          <div class="ex-check-info">
-            <span class="badge badge-subtle">${esc(e.category)}</span>
-            <span class="item-title">${esc(e.name)}</span>
-          </div>
-        </label>
-      `;
-    }).join('');
+    sheet.body.addEventListener('input', (e) => {
+      const f = e.target.dataset.field;
+      if (f === 'name') draft.name = e.target.value;
+      else if (f === 'day-name') {
+        const idx = Number(e.target.closest('[data-idx]').dataset.idx);
+        draft.days[idx].name = e.target.value;
+      }
+    });
 
-    const html = `
-      <div class="manage-split-ex-wrap">
-        <p class="text-subtle">Check all exercises you plan to perform on <strong>${esc(splitDay.name)}</strong>.</p>
-        <div class="list ex-selection-list">
-          ${listHtml}
-        </div>
-        <div class="form-actions-stack">
-          <button class="btn btn-primary btn-block" id="btn-save-split-ex">Done</button>
-        </div>
-      </div>
-    `;
+    sheet.body.addEventListener('change', async (e) => {
+      const f = e.target.dataset.field;
+      if (f === 'start') draft.startDate = e.target.value || dateKey();
+      else if (f === 'day-rest') {
+        const day = draft.days[Number(e.target.closest('[data-idx]').dataset.idx)];
+        day.rest = e.target.checked;
+        if (day.rest) day.name = 'Rest';
+        else if (day.name.toLowerCase() === 'rest') day.name = 'Workout';
+        rerender();
+      } else if (f === 'load-split' && e.target.value) {
+        const found = savedSplits.find((s) => s.id === e.target.value);
+        if (found) { draft = clone(found); isNew = false; rerender(); }
+      }
+    });
 
-    const sheet = openSheet({
-      title: `${splitDay.name} Exercises`,
-      html,
-      onMount: (sheetApi) => {
-        $('#btn-save-split-ex', sheetApi.body)?.addEventListener('click', () => {
-          const checkedIds = $$('.ex-check:checked', sheetApi.body).map((c) => c.dataset.id);
-          splitDay.exerciseIds = checkedIds;
+    sheet.body.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const rowEl = btn.closest('[data-idx]');
+      const idx = rowEl ? Number(rowEl.dataset.idx) : -1;
+
+      switch (btn.dataset.act) {
+        case 'type': {
+          const type = btn.dataset.type;
+          if (type === draft.type) return;
+          if (type === 'weekly' && draft.days.length !== 7) {
+            const base = draft.days;
+            draft.days = Array.from({ length: 7 }, (_, i) => base[i] || { id: uid(), name: 'Rest', rest: true, exerciseIds: [] });
+          }
+          if (type === 'rotation' && !draft.startDate) draft.startDate = dateKey();
+          draft.type = type;
+          rerender();
+          break;
+        }
+        case 'template': {
+          const t = SPLIT_TEMPLATES.find((x) => x.key === btn.dataset.key);
+          if (!t) return;
+          draft = splitFromTemplate(t);
+          isNew = true;
+          rerender();
+          toast(`Loaded "${t.name}" — tap Save to apply`);
+          break;
+        }
+        case 'add-day':
+          draft.days.push({ id: uid(), name: `Day ${draft.days.length + 1}`, rest: false, exerciseIds: [] });
+          rerender();
+          sheet.body.scrollTop = sheet.body.scrollHeight;
+          break;
+        case 'day-up':
+          if (idx > 0) [draft.days[idx - 1], draft.days[idx]] = [draft.days[idx], draft.days[idx - 1]];
+          rerender();
+          break;
+        case 'day-down':
+          if (idx < draft.days.length - 1) [draft.days[idx + 1], draft.days[idx]] = [draft.days[idx], draft.days[idx + 1]];
+          rerender();
+          break;
+        case 'day-del':
+          if (draft.days.length <= 1) { toast('A rotation needs at least one day', { type: 'warn' }); return; }
+          draft.days.splice(idx, 1);
+          rerender();
+          break;
+        case 'day-ex': {
+          const day = draft.days[idx];
+          openDayExerciseEditor({
+            title: `${day.name || dayLabel(draft, idx)} Exercises`,
+            dayName: day.name || dayLabel(draft, idx),
+            exerciseIds: day.exerciseIds,
+            saveLabel: 'Done',
+            onSave: async (ids) => {
+              day.exerciseIds = ids;
+              this.exercises = await repo.getExercises(); // pick up any new custom exercises
+              rerender();
+            },
+          });
+          break;
+        }
+        case 'delete-split': {
+          const ok = await confirmDialog(`Delete "${draft.name}"? Your workout history is not affected.`, { title: 'Delete Split', okText: 'Delete', danger: true });
+          if (!ok) return;
+          await repo.deleteSplit(draft.id);
+          const remaining = (await repo.getSplits())[0];
+          if (remaining) await repo.setActiveSplit(remaining.id);
+          toast('Split deleted');
           sheet.close();
-          onSaved?.();
-        });
-      },
+          await this.refresh();
+          break;
+        }
+        default:
+          break;
+      }
+    });
+
+    sheet.footer.addEventListener('click', async (e) => {
+      if (!e.target.closest('[data-act="save"]')) return;
+      draft.name = draft.name.trim() || 'My Split';
+      draft.days.forEach((d, i) => { if (!d.rest && !d.name.trim()) d.name = dayLabel(draft, i); });
+      draft.isActive = true;
+      await repo.saveSplit(draft);
+      await repo.setActiveSplit(draft.id);
+      toast('Split saved & projected across your calendar!', { type: 'success' });
+      sheet.close();
+      await this.refresh();
     });
   }
 
   openDayOverrideSheet(dateStr) {
-    const splitDays = this.activeSplit?.days || [];
-    const actions = splitDays.map((d) => ({
-      label: `Switch to ${d.name} (${d.rest ? 'Rest' : `${d.exerciseIds?.length || 0} exercises`})`,
+    const split = this.activeSplit;
+    if (!split) return;
+    const actions = split.days.map((d, i) => ({
+      label: `${dayLabel(split, i)}: ${d.name}${d.rest ? '' : ` (${d.exerciseIds?.length || 0} exercises)`}`,
+      icon: d.rest ? 'moon' : 'dumbbell',
       onClick: async () => {
-        await repo.setOverride(dateStr, clone(d));
-        toast(`Set ${dateStr} to ${d.name}`);
-        this.refresh();
+        await repo.setOverride(dateStr, d.id);
+        toast(`${longDate(dateStr)} → ${d.name}`);
+        await this.refresh();
       },
     }));
-
     actions.push({
       label: 'Reset to Default Schedule',
+      icon: 'repeat',
       danger: true,
       onClick: async () => {
         await repo.removeOverride(dateStr);
-        toast(`Reset ${dateStr} schedule`);
-        this.refresh();
+        toast('Restored default schedule');
+        await this.refresh();
       },
     });
-
-    actionSheet({
-      title: `Override Schedule for ${dateStr}`,
-      actions,
-    });
+    actionSheet({ title: `Plan for ${longDate(dateStr)}`, actions });
   }
 }
 

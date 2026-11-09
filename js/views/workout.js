@@ -14,6 +14,7 @@ import { ticker, unlockAudio } from '../timers.js';
 import { repo } from '../store/repository.js';
 import { restTimer } from '../components/rest-timer.js';
 import { CATEGORIES } from '../data/exercises.js';
+import { openDayExerciseEditor } from '../components/day-exercise-editor.js';
 
 class WorkoutView {
   container = null;
@@ -50,28 +51,53 @@ class WorkoutView {
      IDLE VIEW (No active session)
      ------------------------------------------------------------------------ */
   async renderIdleView() {
-    const todaySplitDay = await this.getTodayScheduledSplitDay();
+    const plan = await repo.getPlanForDate(dateKey());
+    const allExercises = await repo.getExercises();
+    const exMap = new Map(allExercises.map((e) => [e.id, e]));
     const recentWorkouts = (await repo.getWorkouts()).slice(0, 5);
     const unit = this.settings.weightUnit || 'lbs';
 
     let todayBannerHtml = '';
-    if (todaySplitDay && !todaySplitDay.rest) {
+    if (plan && plan.day && !plan.day.rest) {
+      const plannedNames = (plan.day.exerciseIds || [])
+        .map((id) => exMap.get(id)?.name)
+        .filter(Boolean);
+
       todayBannerHtml = `
         <div class="card split-today-card">
           <div class="split-today-header">
-            <span class="badge badge-accent">Scheduled for Today</span>
-            <span class="split-today-name">${esc(todaySplitDay.name)}</span>
+            <div>
+              <span class="badge badge-accent">Scheduled for Today</span>
+              <h2 class="split-today-name">${esc(plan.day.name)}</h2>
+              <div class="split-today-desc">${plannedNames.length} exercise${plannedNames.length === 1 ? '' : 's'} configured to auto-fill</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btn-configure-autofill" title="Configure what exercises auto-fill for this workout">
+              ${icon('edit', 14)} Edit Exercises
+            </button>
           </div>
-          <p class="split-today-desc">${todaySplitDay.exerciseIds?.length || 0} exercises planned</p>
-          <button class="btn btn-primary btn-block" id="btn-start-scheduled">
-            ${icon('play', 18)} Start ${esc(todaySplitDay.name)}
-          </button>
+
+          <div class="split-today-exercises-preview">
+            ${plannedNames.length
+              ? plannedNames.map((n) => `<span class="ex-chip">${esc(n)}</span>`).join('')
+              : '<span class="text-subtle">No exercises assigned yet. Tap "Edit Exercises" to choose them.</span>'}
+          </div>
+
+          <div class="split-today-actions">
+            <button class="btn btn-primary btn-large btn-block" id="btn-start-scheduled">
+              ${icon('play', 18)} Start ${esc(plan.day.name)} Workout
+            </button>
+          </div>
         </div>
       `;
     }
 
     const recentListHtml = recentWorkouts.length === 0
-      ? '<p class="empty-state-text">No workouts logged yet. Start your first session above!</p>'
+      ? `
+        <div class="empty-state-box">
+          <p class="empty-state-title">No workouts logged yet</p>
+          <p class="empty-state-desc">Start an empty workout or tap your scheduled split above to begin tracking.</p>
+        </div>
+      `
       : recentWorkouts.map((w) => {
           const totalVol = Math.round((w.exercises || []).reduce((t, e) =>
             t + (e.sets || []).reduce((s, x) => s + (x.completed ? (num(x.weight) * num(x.reps)) : 0), 0), 0));
@@ -102,6 +128,12 @@ class WorkoutView {
           </button>
         </div>
 
+        <div class="workout-manage-splits-row">
+          <button class="btn-text-accent btn-sm" id="btn-open-splits-from-workout">
+            ${icon('layers', 14)} Configure Split Routines & Auto-fill Lists ↗
+          </button>
+        </div>
+
         <div class="section-header">
           <h2 class="section-title">Recent Workouts</h2>
         </div>
@@ -113,7 +145,29 @@ class WorkoutView {
 
     $('#btn-start-empty', this.container)?.addEventListener('click', () => this.startNewWorkout());
     $('#btn-start-scheduled', this.container)?.addEventListener('click', () => {
-      if (todaySplitDay) this.startWorkoutFromSplitDay(todaySplitDay);
+      if (plan && plan.day) this.startWorkoutFromSplitDay(plan.day, plan.split);
+    });
+
+    $('#btn-configure-autofill', this.container)?.addEventListener('click', () => {
+      if (plan && plan.day && plan.split) {
+        openDayExerciseEditor({
+          title: `${plan.day.name} Auto-fill Exercises`,
+          dayName: plan.day.name,
+          exerciseIds: plan.day.exerciseIds,
+          onSave: async (ids) => {
+            await repo.updateSplitDayExercises(plan.split.id, plan.day.id, ids);
+            toast(`Updated exercises for ${plan.day.name}!`, { type: 'success' });
+            await this.refresh();
+          },
+        });
+      }
+    });
+
+    $('#btn-open-splits-from-workout', this.container)?.addEventListener('click', () => {
+      document.querySelector('.tab[data-tab="dashboard"]')?.click();
+      setTimeout(() => {
+        document.querySelector('[data-act="open-designer"]')?.click();
+      }, 100);
     });
 
     $('#btn-quick-rest', this.container)?.addEventListener('click', () => {
@@ -231,6 +285,11 @@ class WorkoutView {
       <div class="view-content live-workout-content">
         <div class="workout-title-row">
           <input type="text" id="workout-title-input" class="workout-title-input" value="${esc(w.title || 'Workout')}" placeholder="Workout Name">
+          ${w.splitDayId ? `
+            <button class="btn btn-secondary btn-sm" id="btn-save-as-autofill" title="Save these exercises as the auto-fill template for ${esc(w.splitDayName || 'this routine')}">
+              ${icon('layers', 14)} Update ${esc(w.splitDayName)} Template
+            </button>
+          ` : ''}
         </div>
 
         <div class="exercises-stack" id="exercises-stack">
@@ -265,6 +324,17 @@ class WorkoutView {
       if (this.activeWorkout) {
         this.activeWorkout.title = titleInput.value.trim() || 'Workout';
         repo.saveActiveWorkout(this.activeWorkout);
+      }
+    });
+
+    $('#btn-save-as-autofill', this.container)?.addEventListener('click', async () => {
+      const w = this.activeWorkout;
+      if (!w?.splitDayId) return;
+      const exerciseIds = (w.exercises || []).map((e) => e.exerciseId || e.id).filter(Boolean);
+      const split = w.splitId ? await repo.adapter.get('splits', w.splitId) : await repo.getActiveSplit();
+      if (split) {
+        await repo.updateSplitDayExercises(split.id, w.splitDayId, exerciseIds);
+        toast(`Updated ${w.splitDayName || 'routine'} auto-fill list (${exerciseIds.length} exercises)`, { type: 'success' });
       }
     });
 
@@ -469,7 +539,7 @@ class WorkoutView {
     toast(`Started ${title}`);
   }
 
-  async startWorkoutFromSplitDay(splitDay) {
+  async startWorkoutFromSplitDay(splitDay, split = null) {
     const allExercises = await repo.getExercises();
     const exMap = new Map(allExercises.map((e) => [e.id, e]));
 
@@ -481,6 +551,14 @@ class WorkoutView {
       title: `${splitDay.name} Workout`,
       initialExercises: plannedExercises,
     });
+
+    if (this.activeWorkout && splitDay) {
+      this.activeWorkout.splitDayId = splitDay.id;
+      this.activeWorkout.splitDayName = splitDay.name;
+      this.activeWorkout.splitId = split?.id || null;
+      await repo.saveActiveWorkout(this.activeWorkout);
+      this.renderLiveView();
+    }
   }
 
   async startWorkoutFromPrevious(prevWorkout) {

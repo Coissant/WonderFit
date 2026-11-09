@@ -1,7 +1,8 @@
 /* ==========================================================================
-   AI Meal Photo Estimator (Gemini Vision API: gemini-2.5-flash)
+   AI Meal Photo Estimator (Gemini Vision API — default model: gemini-3.8-flash)
    - Image capture & canvas JPEG compression
-   - Gemini Vision 2.5 Flash prompt for strict 4-metric JSON
+   - Gemini Vision prompt for strict 4-metric JSON
+   - Model string is configurable in Settings (settings.geminiModel)
    - Review & edit modal before logging
    ========================================================================== */
 
@@ -9,6 +10,7 @@ import { $, num, round, esc } from '../utils.js';
 import { openSheet, toast, haptic } from '../ui.js';
 import { icon } from '../icons.js';
 import { repo } from '../store/repository.js';
+import { geminiEndpoint, normalizeModel, prettyModelName } from '../data/gemini.js';
 
 class MealAiEstimator {
   init({ onLogged } = {}) {
@@ -50,7 +52,9 @@ class MealAiEstimator {
 
     try {
       const { base64Data, dataUrl } = await this.compressImage(file, 1024, 0.8);
-      const estimate = await this.callGeminiVision(apiKey, base64Data);
+      const model = normalizeModel(settings.geminiModel);
+      const estimate = await this.callGeminiVision(apiKey, base64Data, model);
+      estimate.model = model;
       haptic([30, 50]);
       this.openReviewSheet(estimate, dataUrl, onLogged);
     } catch (err) {
@@ -94,8 +98,8 @@ class MealAiEstimator {
     });
   }
 
-  async callGeminiVision(apiKey, base64Image) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  async callGeminiVision(apiKey, base64Image, model) {
+    const endpoint = geminiEndpoint(model, apiKey);
 
     const promptText = `
 You are a professional nutrition analyst and dietitian.
@@ -187,7 +191,7 @@ Respond strictly with a single JSON object in this exact schema, with no markdow
         <div class="ai-preview-box">
           ${photoDataUrl ? `<img src="${photoDataUrl}" class="ai-thumbnail" alt="Meal preview">` : ''}
           <div class="ai-preview-info">
-            <span class="badge badge-accent">Gemini 2.5 Flash</span>
+            <span class="badge badge-accent">${esc(prettyModelName(estimate.model))}</span>
             <div class="ai-notes">${esc(estimate.notes || 'Portions estimated from photo')}</div>
           </div>
         </div>

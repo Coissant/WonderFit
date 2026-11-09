@@ -32,6 +32,10 @@ export function haptic(pattern = 12) {
 export function openSheet({ title = '', html = '', footer = '', full = false, className = '', onMount, onClose } = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'sheet-overlay';
+  const existingSheets = document.querySelectorAll('.sheet-overlay').length;
+  if (existingSheets > 0) {
+    overlay.style.zIndex = String(100 + existingSheets * 10);
+  }
   overlay.innerHTML = `
     <div class="sheet ${full ? 'sheet-full' : ''} ${className}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
       <div class="sheet-grab"><div class="sheet-grabber"></div></div>

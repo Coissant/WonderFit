@@ -3,7 +3,7 @@
    Offline-first cache for static shell & dynamic network fallback
    ========================================================================== */
 
-const CACHE_NAME = 'fittrack-v1';
+const CACHE_NAME = 'fittrack-v2';
 
 const STATIC_ASSETS = [
   './',
@@ -13,6 +13,7 @@ const STATIC_ASSETS = [
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
   './js/app.js',
   './js/icons.js',
@@ -21,6 +22,7 @@ const STATIC_ASSETS = [
   './js/ui.js',
   './js/utils.js',
   './js/data/exercises.js',
+  './js/data/gemini.js',
   './js/data/metrics.js',
   './js/data/split-templates.js',
   './js/store/config.js',
@@ -31,6 +33,7 @@ const STATIC_ASSETS = [
   './js/components/rest-timer.js',
   './js/components/barcode-scanner.js',
   './js/components/meal-ai.js',
+  './js/components/day-exercise-editor.js',
   './js/views/dashboard.js',
   './js/views/workout.js',
   './js/views/nutrition.js',

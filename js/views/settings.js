@@ -9,10 +9,12 @@
    ========================================================================== */
 
 import { $, $$, num, esc, dateKey } from '../utils.js';
-import { openSheet, confirmDialog, toast, haptic } from '../ui.js';
+import { openSheet, actionSheet, confirmDialog, toast, haptic } from '../ui.js';
 import { icon } from '../icons.js';
 import { repo } from '../store/repository.js';
 import { ACCENT_PRESETS, applyTheme } from '../theme.js';
+import { DEFAULT_GEMINI_MODEL, normalizeModel, prettyModelName, geminiEndpoint } from '../data/gemini.js';
+import { openDayExerciseEditor } from '../components/day-exercise-editor.js';
 
 class SettingsView {
   container = null;
@@ -144,11 +146,27 @@ class SettingsView {
 
         <!-- 4. GEMINI VISION API KEY -->
         <div class="settings-group">
-          <div class="settings-group-title">AI Meal Estimator (Gemini 2.5 Flash)</div>
+          <div class="settings-group-title">AI Meal Estimator (${esc(prettyModelName(s.geminiModel))})</div>
           <div class="settings-card card">
             <p class="settings-hint">
               Used strictly for the "Snap Meal Photo" feature. Your key is stored ONLY locally on this device and never sent to any third-party server.
             </p>
+            <div class="settings-field">
+              <label class="settings-field-label" for="gemini-model-input">Model Name</label>
+              <div class="api-key-row no-pad">
+                <input type="text" id="gemini-model-input" class="text-input api-key-input" list="gemini-model-options"
+                  placeholder="${DEFAULT_GEMINI_MODEL}" value="${esc(normalizeModel(s.geminiModel))}"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <button class="btn btn-secondary btn-sm" id="btn-reset-model" title="Reset to default model">Reset</button>
+              </div>
+              <datalist id="gemini-model-options">
+                <option value="${DEFAULT_GEMINI_MODEL}"></option>
+              </datalist>
+              <p class="settings-field-hint">Any Gemini model ID that supports image input. Default: <code>${DEFAULT_GEMINI_MODEL}</code></p>
+            </div>
+            <div class="settings-field">
+              <label class="settings-field-label" for="gemini-key-input">API Key</label>
+            </div>
             <div class="api-key-row">
               <input type="${this.showApiKey ? 'text' : 'password'}" id="gemini-key-input" class="text-input api-key-input"
                 placeholder="AIzaSy..." value="${esc(s.geminiApiKey || '')}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
@@ -165,8 +183,15 @@ class SettingsView {
 
         <!-- 5. EXERCISE LIBRARY -->
         <div class="settings-group">
-          <div class="settings-group-title">Exercise Library</div>
+          <div class="settings-group-title">Exercise Library & Auto-Fill Templates</div>
           <div class="settings-card card">
+            <button class="list-item settings-list-btn" id="btn-manage-split-autofills">
+              <div>
+                <div class="item-title">Configure Split Auto-fill Exercises</div>
+                <div class="item-meta">Edit which exercises auto-fill for Leg Day, Push, Pull, etc.</div>
+              </div>
+              ${icon('chevronRight', 18)}
+            </button>
             <button class="list-item settings-list-btn" id="btn-manage-custom-exercises">
               <div class="item-title">Manage Custom Exercises</div>
               ${icon('chevronRight', 18)}
@@ -279,7 +304,19 @@ class SettingsView {
       applyTheme({ theme: this.settings.theme, accent: hex });
     });
 
-    // 7. Gemini API Key
+    // 7. Gemini model name + API Key
+    const modelInput = $('#gemini-model-input', this.container);
+    const saveModel = async (value) => {
+      const model = normalizeModel(value);
+      if (modelInput) modelInput.value = model;
+      this.settings = await repo.saveSettings({ geminiModel: model });
+      const title = modelInput?.closest('.settings-group')?.querySelector('.settings-group-title');
+      if (title) title.textContent = `AI Meal Estimator (${prettyModelName(model)})`;
+      toast(`Gemini model set to ${model}`);
+    };
+    modelInput?.addEventListener('change', () => saveModel(modelInput.value));
+    $('#btn-reset-model', this.container)?.addEventListener('click', () => saveModel(DEFAULT_GEMINI_MODEL));
+
     const apiKeyInput = $('#gemini-key-input', this.container);
     apiKeyInput?.addEventListener('change', async () => {
       const key = apiKeyInput.value.trim();
@@ -298,16 +335,17 @@ class SettingsView {
         toast('Please enter a Gemini API key first', { type: 'warn' });
         return;
       }
-      toast('Testing Gemini API key...');
+      const model = normalizeModel($('#gemini-model-input', this.container)?.value);
+      toast(`Testing key with ${model}...`);
       try {
-        const testRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
+        const testRes = await fetch(geminiEndpoint(model, key), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply "ok"' }] }] }),
         });
         if (testRes.ok) {
-          toast('Gemini API key is valid! ✓', { type: 'success' });
-          await repo.saveSettings({ geminiApiKey: key });
+          toast(`Key works with ${model} ✓`, { type: 'success' });
+          this.settings = await repo.saveSettings({ geminiApiKey: key, geminiModel: model });
         } else {
           const errData = await testRes.json().catch(() => ({}));
           toast(`Key error: ${errData.error?.message || testRes.statusText}`, { type: 'danger', duration: 4000 });
@@ -317,7 +355,38 @@ class SettingsView {
       }
     });
 
-    // 8. Custom Exercises Manager
+    // 8. Auto-fill Templates & Custom Exercises Manager
+    $('#btn-manage-split-autofills', this.container)?.addEventListener('click', async () => {
+      const split = await repo.getActiveSplit();
+      if (!split || !split.days || split.days.length === 0) {
+        toast('No active split found. Create one in Dashboard.', { type: 'warn' });
+        return;
+      }
+      const actions = split.days.map((d, i) => ({
+        label: `${d.name} (${d.rest ? 'Rest Day' : `${d.exerciseIds?.length || 0} exercises`})`,
+        icon: d.rest ? 'moon' : 'dumbbell',
+        onClick: () => {
+          if (d.rest) {
+            toast(`${d.name} is a rest day.`);
+            return;
+          }
+          openDayExerciseEditor({
+            title: `${d.name} Auto-fill Exercises`,
+            dayName: d.name,
+            exerciseIds: d.exerciseIds,
+            onSave: async (ids) => {
+              await repo.updateSplitDayExercises(split.id, d.id, ids);
+              toast(`Updated auto-fill exercises for ${d.name}!`, { type: 'success' });
+            },
+          });
+        },
+      }));
+      actionSheet({
+        title: 'Select Routine to Configure Auto-fill',
+        actions,
+      });
+    });
+
     $('#btn-manage-custom-exercises', this.container)?.addEventListener('click', () => {
       this.openCustomExercisesSheet();
     });

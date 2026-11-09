@@ -1657,3 +1657,399 @@ input, select, textarea {
   cursor: pointer;
   padding: 0 4px;
 }
+
+/* ==========================================================================
+   EXPANDED EMPTY STATES & CONTAINER BOXES (Fixes text escaping boundaries)
+   ========================================================================== */
+.empty-state-box {
+  padding: 32px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  width: 100%;
+}
+
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.empty-state-desc {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+.empty-state-text {
+  display: block;
+  padding: 28px 24px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  width: 100%;
+}
+
+.workout-recent-list,
+.food-log-list {
+  min-height: 80px;
+}
+
+/* ==========================================================================
+   SPLIT BANNER, TODAY'S PLAN CARD & AUTO-FILL PREVIEW CHIPS
+   ========================================================================== */
+.split-banner-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+}
+
+.split-banner-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.split-banner-title {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.split-banner-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.split-today-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.08) 0%, var(--surface-1) 100%);
+  border-color: rgba(var(--accent-rgb), 0.3);
+}
+
+.split-today-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.split-today-name {
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.split-today-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.split-today-exercises-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.split-today-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.workout-manage-splits-row {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.ex-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px !important;
+  font-weight: 500;
+  padding: 5px 11px;
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.autofill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.autofill-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.plan-ex-list {
+  padding-left: 20px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.plan-ex-list li {
+  margin-bottom: 4px;
+}
+
+.cal-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.completed { background-color: var(--accent); }
+.legend-dot.scheduled { background-color: var(--blue); }
+.legend-dot.rest { background-color: var(--text-subtle); }
+
+/* ==========================================================================
+   SPLIT DESIGNER & DAY EXERCISE EDITOR MODALS
+   ========================================================================== */
+.sheet-full {
+  height: 92vh !important;
+  max-height: 92vh !important;
+}
+
+.split-designer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.split-days-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-day-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.split-day-row.is-rest {
+  opacity: 0.75;
+}
+
+.split-day-row-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.split-day-idx-badge {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent);
+  background-color: rgba(var(--accent-rgb), 0.12);
+  padding: 4px 8px;
+  border-radius: 6px;
+  min-width: 48px;
+  text-align: center;
+}
+
+.split-day-name-input {
+  flex: 1;
+  min-height: 38px;
+  padding: 6px 12px;
+}
+
+.split-day-exercises-box {
+  background-color: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+.split-day-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.split-day-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.split-day-actions .spacer {
+  flex: 1;
+}
+
+/* Day Exercise Editor Component */
+.editor-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+
+.editor-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.editor-num {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  width: 22px;
+}
+
+.editor-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-btn.sm {
+  width: 32px;
+  height: 32px;
+}
+
+.icon-btn.danger {
+  color: var(--danger);
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.pick-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.pick-row.on .pick-check {
+  background-color: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.inline-create {
+  margin-top: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inline-create-row {
+  display: flex;
+  gap: 8px;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-subtle);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Settings field styling */
+.settings-field {
+  padding: 12px 16px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-field-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.settings-field-hint {
+  font-size: 12px;
+  color: var(--text-subtle);
+  margin-top: 4px;
+}
+
+.api-key-row.no-pad {
+  padding: 0;
+}
+

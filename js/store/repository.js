@@ -10,7 +10,38 @@ import { IndexedDBAdapter } from './indexeddb-adapter.js';
 import { LocalStorageAdapter } from './localstorage-adapter.js';
 import { DEFAULT_EXERCISES } from '../data/exercises.js';
 import { SPLIT_TEMPLATES, splitFromTemplate } from '../data/split-templates.js';
-import { uid, dateKey, clone, num } from '../utils.js';
+import { DEFAULT_GEMINI_MODEL } from '../data/gemini.js';
+import { uid, dateKey, clone, num, parseDateKey, daysBetween } from '../utils.js';
+
+/**
+ * Resolve which split day is planned for a date.
+ * Pure function so the calendar can call it for every cell without extra DB reads.
+ * Returns { split, day, override } or null.
+ */
+export function planForDate(split, overrides, dateStr) {
+  if (!split || !Array.isArray(split.days) || split.days.length === 0) return null;
+
+  const ov = (overrides || []).find((o) => o.date === dateStr || o.id === dateStr);
+  if (ov) {
+    // New format references a split day by id; legacy format stored a copy of the day.
+    const dayId = ov.dayId || (ov.name ? ov.id : null);
+    const day = split.days.find((d) => d.id === dayId);
+    if (day) return { split, day, override: true };
+    if (ov.name) return { split, day: ov, override: true };
+  }
+
+  const target = parseDateKey(dateStr);
+  let index;
+  if (split.type === 'weekly') {
+    index = (target.getDay() + 6) % 7; // Mon=0 … Sun=6
+  } else {
+    const start = split.startDate ? parseDateKey(split.startDate) : target;
+    const n = split.days.length;
+    index = ((daysBetween(start, target) % n) + n) % n;
+  }
+  const day = split.days[index];
+  return day ? { split, day, override: false } : null;
+}
 
 export const DEFAULT_SETTINGS = {
   id: 'user',
@@ -28,6 +59,7 @@ export const DEFAULT_SETTINGS = {
   accent: '#30D158',      // iOS green default
   // AI Estimator
   geminiApiKey: '',
+  geminiModel: DEFAULT_GEMINI_MODEL, // user-editable in Settings
   // System metadata
   updatedAt: Date.now(),
 };
@@ -333,22 +365,45 @@ class Repository {
     await this.adapter.remove('splits', id);
   }
 
+  /** Update the exercises that auto-fill when a split day's workout is started. */
+  async updateSplitDayExercises(splitId, dayId, exerciseIds) {
+    const split = await this.adapter.get('splits', splitId);
+    if (!split) throw new Error('Split not found');
+    const day = (split.days || []).find((d) => d.id === dayId);
+    if (!day) throw new Error('Split day not found');
+    day.exerciseIds = [...exerciseIds];
+    await this.adapter.put('splits', split);
+    return split;
+  }
+
+  async getPlanForDate(dateStr = dateKey()) {
+    const [split, overrides] = await Promise.all([this.getActiveSplit(), this.getAllOverrides()]);
+    return planForDate(split, overrides, dateStr);
+  }
+
   async getOverride(dateStr) {
-    return this.adapter.get('overrides', dateStr);
+    const all = await this.getAllOverrides();
+    return all.find((o) => o.date === dateStr || o.id === dateStr);
   }
 
   async getAllOverrides() {
     return this.adapter.getAll('overrides');
   }
 
-  async setOverride(dateStr, overrideData) {
-    const doc = { id: dateStr, date: dateStr, ...overrideData };
+  /** Point a specific date at a different split day (by id). */
+  async setOverride(dateStr, dayId) {
+    await this.removeOverride(dateStr);
+    const doc = { id: dateStr, date: dateStr, dayId };
     await this.adapter.put('overrides', doc);
     return doc;
   }
 
   async removeOverride(dateStr) {
-    await this.adapter.remove('overrides', dateStr);
+    // Also cleans up legacy overrides that were keyed by the split-day id.
+    const all = await this.getAllOverrides();
+    for (const o of all) {
+      if (o.id === dateStr || o.date === dateStr) await this.adapter.remove('overrides', o.id);
+    }
   }
 
   /* ========================================================================
