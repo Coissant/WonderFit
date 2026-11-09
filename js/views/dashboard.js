@@ -13,6 +13,7 @@ import { openSheet, actionSheet, confirmDialog, toast, haptic } from '../ui.js';
 import { icon } from '../icons.js';
 import { repo, planForDate } from '../store/repository.js';
 import { SPLIT_TEMPLATES, splitFromTemplate } from '../data/split-templates.js';
+import { getDailyQuote } from '../data/quotes.js';
 import { openDayExerciseEditor } from '../components/day-exercise-editor.js';
 import { workoutView } from './workout.js';
 
@@ -30,6 +31,7 @@ class DashboardView {
   overrides = [];
   exercises = [];
   settings = null;
+  quoteOffset = 0;
 
   async init(container) {
     this.container = container;
@@ -47,6 +49,22 @@ class DashboardView {
 
   exName(id) {
     return this.exercises.find((e) => e.id === id)?.name || null;
+  }
+
+  renderQuoteHtml() {
+    const q = getDailyQuote(this.quoteOffset);
+    return `
+      <div class="card quote-card" id="dashboard-quote-box">
+        <div class="quote-header">
+          <span class="quote-tag">${icon('flame', 13)} Daily Motivation</span>
+          <button class="quote-cycle-btn" data-act="next-quote" title="Show another quote" aria-label="Show another quote">
+            ${icon('repeat', 13)}
+          </button>
+        </div>
+        <p class="quote-body">${esc(q.text)}</p>
+        <span class="quote-author">${esc(q.author)}</span>
+      </div>
+    `;
   }
 
   /* ------------------------------------------------------------------------
@@ -79,6 +97,8 @@ class DashboardView {
           </div>
           <button class="btn btn-secondary btn-sm" data-act="open-designer">${icon('edit', 14)} Edit</button>
         </div>
+
+        ${this.renderQuoteHtml()}
 
         <div class="calendar-nav-bar">
           <button class="icon-btn" data-act="prev-month" aria-label="Previous month">${icon('chevronLeft', 20)}</button>
@@ -252,6 +272,17 @@ class DashboardView {
     if (!btn) return;
 
     switch (btn.dataset.act) {
+      case 'next-quote': {
+        this.quoteOffset = (this.quoteOffset || 0) + 1;
+        const box = $('#dashboard-quote-box', this.container);
+        if (box) {
+          box.outerHTML = this.renderQuoteHtml();
+        } else {
+          this.render();
+        }
+        haptic(15);
+        break;
+      }
       case 'open-designer':
         this.openSplitDesigner();
         break;

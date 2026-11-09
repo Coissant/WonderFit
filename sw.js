@@ -3,7 +3,7 @@
    Offline-first cache for static shell & dynamic network fallback
    ========================================================================== */
 
-const CACHE_NAME = 'fittrack-v3';
+const CACHE_NAME = 'fittrack-v4';
 
 const STATIC_ASSETS = [
   './',
@@ -24,6 +24,7 @@ const STATIC_ASSETS = [
   './js/data/exercises.js',
   './js/data/gemini.js',
   './js/data/metrics.js',
+  './js/data/quotes.js',
   './js/data/split-templates.js',
   './js/store/config.js',
   './js/store/schema.js',
