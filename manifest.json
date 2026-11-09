@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "FitTrack — Fitness & Nutrition",
-  "short_name": "FitTrack",
+  "name": "WonderFit — Fitness & Nutrition",
+  "short_name": "WonderFit",
   "description": "Live workout logging, split calendar, and a streamlined 4-metric nutrition tracker with barcode scanning and AI meal estimates.",
   "start_url": "./",
   "scope": "./",

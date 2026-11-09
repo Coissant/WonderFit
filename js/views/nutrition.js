@@ -15,6 +15,7 @@ import { repo } from '../store/repository.js';
 import { METRICS, fmtMetric, metricStatus } from '../data/metrics.js';
 import { barcodeScanner } from '../components/barcode-scanner.js';
 import { mealAi } from '../components/meal-ai.js';
+import { triggerWidgetSync } from '../services/widget-sync.js';
 
 class NutritionView {
   container = null;
@@ -34,6 +35,9 @@ class NutritionView {
     this.foodLogs = await repo.getFoodLog(this.selectedDate);
     this.staples = await repo.getStaples();
     this.render();
+    if (this.selectedDate === dateKey()) {
+      triggerWidgetSync();
+    }
   }
 
   render() {

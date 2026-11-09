@@ -15,6 +15,7 @@ import { repo, planForDate } from '../store/repository.js';
 import { SPLIT_TEMPLATES, splitFromTemplate } from '../data/split-templates.js';
 import { getDailyQuote } from '../data/quotes.js';
 import { openDayExerciseEditor } from '../components/day-exercise-editor.js';
+import { triggerWidgetSync } from '../services/widget-sync.js';
 import { workoutView } from './workout.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -45,6 +46,7 @@ class DashboardView {
       repo.getSettings(), repo.getActiveSplit(), repo.getWorkouts(), repo.getAllOverrides(), repo.getExercises(),
     ]);
     this.render();
+    triggerWidgetSync();
   }
 
   exName(id) {

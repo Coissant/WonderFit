@@ -60,6 +60,12 @@ export const DEFAULT_SETTINGS = {
   // AI Estimator
   geminiApiKey: '',
   geminiModel: DEFAULT_GEMINI_MODEL, // user-editable in Settings
+  // iOS Home Screen Widget (Scriptable) Cloud Sync
+  widgetSyncEnabled: false,
+  widgetSyncProvider: 'firebase',    // 'firebase' | 'gist'
+  widgetFirebaseUrl: '',
+  widgetGistToken: '',
+  widgetGistId: '',
   // System metadata
   updatedAt: Date.now(),
 };
