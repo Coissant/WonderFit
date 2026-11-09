@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1A1A22"/>
+      <stop offset="100%" stop-color="#0E0E11"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#30D158"/>
+      <stop offset="100%" stop-color="#0A84FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="510" height="510" x="1" y="1" rx="111" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+  
+  <!-- Dumbbell + Nutrition Energy Pulse Graphic -->
+  <g transform="translate(256,256) scale(1.15)">
+    <!-- Dumbbell Bar -->
+    <rect x="-140" y="-12" width="280" height="24" rx="12" fill="#FFFFFF"/>
+    
+    <!-- Weight Plates Left -->
+    <rect x="-110" y="-80" width="30" height="160" rx="10" fill="url(#accent)"/>
+    <rect x="-146" y="-60" width="24" height="120" rx="8" fill="url(#accent)"/>
+    
+    <!-- Weight Plates Right -->
+    <rect x="80" y="-80" width="30" height="160" rx="10" fill="url(#accent)"/>
+    <rect x="122" y="-60" width="24" height="120" rx="8" fill="url(#accent)"/>
+    
+    <!-- Inner Energy Bolt in Center -->
+    <path d="M-8 -36 L16 -36 L2 -8 L24 -8 L-16 44 L-4 4 L-24 4 Z" fill="#30D158"/>
+  </g>
+</svg>
