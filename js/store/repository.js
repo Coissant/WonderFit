@@ -45,11 +45,13 @@ export function planForDate(split, overrides, dateStr) {
 
 export const DEFAULT_SETTINGS = {
   id: 'user',
-  // Nutrition daily goals (4 metrics ONLY)
+  // Nutrition daily goals (4 metrics + water)
   caloriesGoal: 2400,
   proteinGoal: 160,
   sugarGoal: 45,
   sodiumGoal: 2300,
+  waterGoal: 80,
+  waterUnit: 'oz',        // 'oz' | 'ml'
   // Workout preferences
   weightUnit: 'lbs',      // 'lbs' | 'kg'
   defaultRestSec: 90,     // seconds (e.g. 60, 90, 120, 180)
@@ -60,12 +62,6 @@ export const DEFAULT_SETTINGS = {
   // AI Estimator
   geminiApiKey: '',
   geminiModel: DEFAULT_GEMINI_MODEL, // user-editable in Settings
-  // iOS Home Screen Widget (Scriptable) Cloud Sync
-  widgetSyncEnabled: false,
-  widgetSyncProvider: 'firebase',    // 'firebase' | 'gist'
-  widgetFirebaseUrl: '',
-  widgetGistToken: '',
-  widgetGistId: '',
   // System metadata
   updatedAt: Date.now(),
 };
@@ -339,6 +335,32 @@ class Repository {
 
   async deleteStaple(id) {
     await this.adapter.remove('staples', id);
+  }
+
+  /* ========================================================================
+     WATER INTAKE LOG
+     ======================================================================== */
+  async getWater(dateStr = dateKey()) {
+    const doc = await this.adapter.get('water', dateStr);
+    return doc || { id: dateStr, date: dateStr, amount: 0, updatedAt: 0 };
+  }
+
+  async setWater(dateStr, amount) {
+    const safeAmount = Math.max(0, num(amount));
+    const doc = {
+      id: dateStr,
+      date: dateStr,
+      amount: safeAmount,
+      updatedAt: Date.now(),
+    };
+    await this.adapter.put('water', doc);
+    return doc;
+  }
+
+  async addWater(dateStr, delta) {
+    const current = await this.getWater(dateStr);
+    const newAmount = Math.max(0, (current.amount || 0) + num(delta));
+    return this.setWater(dateStr, newAmount);
   }
 
   /* ========================================================================

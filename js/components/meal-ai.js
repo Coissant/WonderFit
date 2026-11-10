@@ -1,8 +1,9 @@
 /* ==========================================================================
    AI Meal Photo Estimator (Gemini Vision API — default model: gemini-3.8-flash)
-   - Image capture & canvas JPEG compression
-   - Gemini Vision prompt for strict 4-metric JSON
-   - Model string is configurable in Settings (settings.geminiModel)
+   - Fast image capture & optimized canvas JPEG compression (800px / 0.7 quality)
+   - Real-time animated scan progress modal with live timer & cancel support
+   - Streamlined Gemini Vision prompt with maxOutputTokens constraint for speed
+   - Configurable model string in Settings (settings.geminiModel)
    - Review & edit modal before logging
    ========================================================================== */
 
@@ -48,74 +49,267 @@ class MealAiEstimator {
       return;
     }
 
-    toast('Compressing image & analyzing food...', { duration: 3500 });
+    const abortController = new AbortController();
+    const progressModal = this.openProgressModal({
+      onCancel: () => {
+        abortController.abort();
+      },
+    });
+
+    // Step timeouts for realistic visual progress while awaiting network
+    let stepTimers = [];
 
     try {
-      const { base64Data, dataUrl } = await this.compressImage(file, 1024, 0.8);
+      // Step 1: Optimize photo
+      progressModal.setStep(0);
+      const { base64Data, dataUrl } = await this.compressImage(file, 800, 0.7);
+      progressModal.setThumbnail(dataUrl);
+      progressModal.markDone(0);
+
+      // Step 2: Contact Gemini API
+      progressModal.setStep(1);
       const model = normalizeModel(settings.geminiModel);
-      const estimate = await this.callGeminiVision(apiKey, base64Data, model);
+
+      // Schedule subsequent visual steps while fetch is in-flight
+      stepTimers.push(setTimeout(() => {
+        progressModal.markDone(1);
+        progressModal.setStep(2);
+      }, 1500));
+
+      stepTimers.push(setTimeout(() => {
+        progressModal.markDone(2);
+        progressModal.setStep(3);
+      }, 3500));
+
+      const estimate = await this.callGeminiVision(apiKey, base64Data, model, abortController.signal);
       estimate.model = model;
-      haptic([30, 50]);
+
+      // Clear scheduled step timers
+      stepTimers.forEach(clearTimeout);
+
+      // Final complete state
+      progressModal.markDone(0);
+      progressModal.markDone(1);
+      progressModal.markDone(2);
+      progressModal.markDone(3);
+      progressModal.setStatus('✓ Analysis Complete!', 'Opening nutrition review...');
+
+      haptic([30, 60]);
+      await new Promise((r) => setTimeout(r, 400));
+      progressModal.close();
+
       this.openReviewSheet(estimate, dataUrl, onLogged);
     } catch (err) {
+      stepTimers.forEach(clearTimeout);
+      if (err.name === 'AbortError' || abortController.signal.aborted) {
+        progressModal.close();
+        toast('Food scan cancelled');
+        return;
+      }
       console.error('[MealAi] Analysis failed:', err);
-      toast(`AI analysis failed: ${err.message || 'Unknown error'}`, { type: 'danger', duration: 4000 });
+      progressModal.showError(err.message || 'AI analysis failed');
     }
   }
 
-  compressImage(file, maxDimension = 1024, quality = 0.8) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          let { width, height } = img;
-          if (width > maxDimension || height > maxDimension) {
-            if (width > height) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            } else {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
+  openProgressModal({ onCancel } = {}) {
+    const startTime = Date.now();
+    let timerId = null;
+
+    const html = `
+      <div class="scan-progress-wrap">
+        <div class="scan-thumb-container" id="scan-thumb-box">
+          <div class="scan-radar-line"></div>
+          <div id="scan-thumb-placeholder" class="text-subtle">${icon('camera', 36)}</div>
+        </div>
+
+        <div class="scan-status-header">
+          <h3 class="scan-status-title" id="scan-status-title">Analyzing Meal Photo</h3>
+          <p class="scan-status-subtitle" id="scan-status-sub">Estimating visible foods and portions...</p>
+        </div>
+
+        <div class="scan-timer-pill" id="scan-timer">
+          ${icon('timer', 13)} Elapsed: <span id="scan-elapsed">0.0s</span>
+        </div>
+
+        <div class="scan-steps-list">
+          <div class="scan-step-row active" id="scan-step-0">
+            <span class="scan-step-dot">1</span>
+            <span class="scan-step-text">Optimizing photo for Vision AI</span>
+          </div>
+          <div class="scan-step-row" id="scan-step-1">
+            <span class="scan-step-dot">2</span>
+            <span class="scan-step-text">Connecting to Gemini AI</span>
+          </div>
+          <div class="scan-step-row" id="scan-step-2">
+            <span class="scan-step-dot">3</span>
+            <span class="scan-step-text">Detecting food items & portions</span>
+          </div>
+          <div class="scan-step-row" id="scan-step-3">
+            <span class="scan-step-dot">4</span>
+            <span class="scan-step-text">Calculating 4 nutrition metrics</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const sheet = openSheet({
+      title: 'AI Food Scanner',
+      html,
+      footer: `
+        <button class="btn btn-secondary btn-block" id="btn-cancel-scan">Cancel Scan</button>
+      `,
+      onMount: (sheetApi) => {
+        $('#btn-cancel-scan', sheetApi.footer)?.addEventListener('click', () => {
+          clearInterval(timerId);
+          sheet.close();
+          onCancel?.();
+        });
+      },
+      onClose: () => {
+        clearInterval(timerId);
+      },
+    });
+
+    const elapsedEl = $('#scan-elapsed', sheet.body);
+    timerId = setInterval(() => {
+      if (elapsedEl) {
+        const sec = ((Date.now() - startTime) / 1000).toFixed(1);
+        elapsedEl.textContent = `${sec}s`;
+      }
+    }, 100);
+
+    return {
+      sheet,
+      setThumbnail(url) {
+        const box = $('#scan-thumb-box', sheet.body);
+        if (box) {
+          box.innerHTML = `
+            <img src="${url}" class="scan-thumb-img" alt="Meal">
+            <div class="scan-radar-line"></div>
+          `;
+        }
+      },
+      setStep(idx) {
+        for (let i = 0; i <= 3; i++) {
+          const row = $(`#scan-step-${i}`, sheet.body);
+          if (!row) continue;
+          if (i < idx) {
+            row.className = 'scan-step-row done';
+            const dot = row.querySelector('.scan-step-dot');
+            if (dot) dot.textContent = '✓';
+          } else if (i === idx) {
+            row.className = 'scan-step-row active';
+            const dot = row.querySelector('.scan-step-dot');
+            if (dot) dot.textContent = String(i + 1);
+          } else {
+            row.className = 'scan-step-row';
+            const dot = row.querySelector('.scan-step-dot');
+            if (dot) dot.textContent = String(i + 1);
           }
+        }
+      },
+      markDone(idx) {
+        const row = $(`#scan-step-${idx}`, sheet.body);
+        if (row) {
+          row.className = 'scan-step-row done';
+          const dot = row.querySelector('.scan-step-dot');
+          if (dot) dot.textContent = '✓';
+        }
+      },
+      setStatus(title, sub) {
+        const titleEl = $('#scan-status-title', sheet.body);
+        const subEl = $('#scan-status-sub', sheet.body);
+        if (titleEl) titleEl.textContent = title;
+        if (subEl) subEl.textContent = sub;
+      },
+      showError(msg) {
+        clearInterval(timerId);
+        const titleEl = $('#scan-status-title', sheet.body);
+        const subEl = $('#scan-status-sub', sheet.body);
+        if (titleEl) {
+          titleEl.textContent = 'Analysis Failed';
+          titleEl.style.color = 'var(--danger)';
+        }
+        if (subEl) subEl.textContent = msg;
+        const btn = $('#btn-cancel-scan', sheet.footer);
+        if (btn) btn.textContent = 'Close';
+      },
+      close() {
+        clearInterval(timerId);
+        sheet.close();
+      },
+    };
+  }
 
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
+  compressImage(file, maxDimension = 800, quality = 0.7) {
+    return new Promise((resolve, reject) => {
+      let objectUrl = null;
+      try {
+        objectUrl = URL.createObjectURL(file);
+      } catch (err) {
+        // Fallback to FileReader if createObjectURL fails
+        const reader = new FileReader();
+        reader.onload = (e) => this._drawImage(e.target.result, maxDimension, quality, resolve, reject);
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(file);
+        return;
+      }
 
-          const dataUrl = canvas.toDataURL('image/jpeg', quality);
-          const base64Data = dataUrl.split(',')[1];
-          resolve({ base64Data, dataUrl });
-        };
-        img.onerror = () => reject(new Error('Failed to load image file'));
-        img.src = e.target.result;
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsDataURL(file);
+      this._drawImage(
+        objectUrl,
+        maxDimension,
+        quality,
+        (res) => {
+          URL.revokeObjectURL(objectUrl);
+          resolve(res);
+        },
+        (err) => {
+          URL.revokeObjectURL(objectUrl);
+          reject(err);
+        }
+      );
     });
   }
 
-  async callGeminiVision(apiKey, base64Image, model) {
+  _drawImage(src, maxDimension, quality, resolve, reject) {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      const base64Data = dataUrl.split(',')[1];
+      resolve({ base64Data, dataUrl, width, height });
+    };
+    img.onerror = () => reject(new Error('Failed to decode image file'));
+    img.src = src;
+  }
+
+  async callGeminiVision(apiKey, base64Image, model, signal) {
     const endpoint = geminiEndpoint(model, apiKey);
 
     const promptText = `
-You are a professional nutrition analyst and dietitian.
+You are an expert nutrition analyst.
 Analyze this meal photo carefully.
-Identify all visible food items and estimate their portions.
-Calculate and return STRICTLY AND ONLY the following 4 nutritional metrics:
-1. calories (kcal)
-2. protein_g (grams)
-3. sugar_g (grams)
-4. sodium_mg (milligrams)
-
-Do NOT provide carbs, fats, fiber, vitamins, or any other nutrient.
-Respond strictly with a single JSON object in this exact schema, with no markdown code blocks and no conversational text:
+Identify visible food items and estimate their portion sizes.
+Calculate and return STRICTLY a JSON object with ONLY these 4 nutritional metrics (no carbs, no fat, no markdown formatting outside JSON):
 {
-  "name": "Short descriptive meal title (e.g., Grilled Chicken Rice Bowl with Broccoli)",
-  "items": ["Item 1 with estimated portion", "Item 2 with estimated portion"],
+  "name": "Short descriptive meal title (e.g., Grilled Chicken Rice Bowl)",
+  "items": ["Item with portion estimate"],
   "calories": 620,
   "protein_g": 45,
   "sugar_g": 3.5,
@@ -139,7 +333,8 @@ Respond strictly with a single JSON object in this exact schema, with no markdow
         },
       ],
       generationConfig: {
-        temperature: 0.2,
+        temperature: 0.1,
+        maxOutputTokens: 600,
         responseMimeType: 'application/json',
       },
     };
@@ -148,6 +343,7 @@ Respond strictly with a single JSON object in this exact schema, with no markdow
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal,
     });
 
     if (!res.ok) {

@@ -15,7 +15,6 @@ import { repo } from '../store/repository.js';
 import { METRICS, fmtMetric, metricStatus } from '../data/metrics.js';
 import { barcodeScanner } from '../components/barcode-scanner.js';
 import { mealAi } from '../components/meal-ai.js';
-import { triggerWidgetSync } from '../services/widget-sync.js';
 
 class NutritionView {
   container = null;
@@ -23,6 +22,7 @@ class NutritionView {
   settings = null;
   foodLogs = [];
   staples = [];
+  waterLog = null;
 
   async init(container) {
     this.container = container;
@@ -34,10 +34,61 @@ class NutritionView {
     this.settings = await repo.getSettings();
     this.foodLogs = await repo.getFoodLog(this.selectedDate);
     this.staples = await repo.getStaples();
+    this.waterLog = await repo.getWater(this.selectedDate);
     this.render();
-    if (this.selectedDate === dateKey()) {
-      triggerWidgetSync();
-    }
+  }
+
+  renderWaterCardHtml() {
+    const s = this.settings || {};
+    const unit = s.waterUnit || 'oz';
+    const goal = Math.max(1, s.waterGoal || (unit === 'ml' ? 2500 : 80));
+    const current = this.waterLog?.amount || 0;
+    const pct = Math.round((current / goal) * 100);
+    const clampedPct = Math.min(100, pct);
+    const step1 = unit === 'ml' ? 250 : 8;
+    const step2 = unit === 'ml' ? 500 : 16;
+    const step3 = unit === 'ml' ? 750 : 24;
+
+    return `
+      <div class="card water-card">
+        <div class="water-card-top">
+          <div class="water-title-wrap">
+            <span class="water-badge-icon">${icon('droplet', 17)}</span>
+            <span class="water-title">Water Intake</span>
+          </div>
+          <div class="water-stats-wrap">
+            <span class="water-val-current">${current.toLocaleString()}</span>
+            <span class="water-val-goal">/ ${goal.toLocaleString()} ${unit}</span>
+            <span class="water-pct-tag ${pct >= 100 ? 'done' : ''}">${pct}%</span>
+          </div>
+        </div>
+
+        <div class="water-progress-track">
+          <div class="water-progress-fill" style="width: ${clampedPct}%"></div>
+        </div>
+
+        <div class="water-quick-row">
+          <button class="btn btn-secondary btn-sm water-quick-btn" data-act="add-water" data-amount="${step1}">
+            +${step1}${unit} <span class="water-btn-hint">${unit === 'ml' ? 'Glass' : 'Cup'}</span>
+          </button>
+          <button class="btn btn-secondary btn-sm water-quick-btn" data-act="add-water" data-amount="${step2}">
+            +${step2}${unit} <span class="water-btn-hint">Bottle</span>
+          </button>
+          <button class="btn btn-secondary btn-sm water-quick-btn" data-act="add-water" data-amount="${step3}">
+            +${step3}${unit}
+          </button>
+          <div class="water-action-icons">
+            <button class="icon-btn sm" id="btn-edit-water" title="Edit Water Amount" aria-label="Edit Water Amount">
+              ${icon('edit', 14)}
+            </button>
+            ${current > 0 ? `
+            <button class="icon-btn sm" data-act="sub-water" data-amount="${step1}" title="Subtract ${step1}${unit}" aria-label="Subtract Water">
+              ${icon('minus', 14)}
+            </button>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   render() {
@@ -110,6 +161,9 @@ class NutritionView {
         <div class="nutrition-dashboard-grid">
           ${metricsCardsHtml}
         </div>
+
+        <!-- WATER INTAKE TRACKER -->
+        ${this.renderWaterCardHtml()}
 
         <!-- 4 QUICK ACTION BUTTONS -->
         <div class="nutrition-actions-row">
@@ -207,6 +261,78 @@ class NutritionView {
         toast('Food log cleared');
         this.refresh();
       }
+    });
+
+    // 8. Water Intake actions
+    $$('[data-act="add-water"]', this.container).forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const amt = num(btn.dataset.amount, 8);
+        await repo.addWater(this.selectedDate, amt);
+        haptic(20);
+        toast(`+${amt}${this.settings?.waterUnit || 'oz'} water logged! 💧`);
+        this.refresh();
+      });
+    });
+
+    $$('[data-act="sub-water"]', this.container).forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const amt = num(btn.dataset.amount, 8);
+        await repo.addWater(this.selectedDate, -amt);
+        haptic(20);
+        toast(`Removed ${amt}${this.settings?.waterUnit || 'oz'} water`);
+        this.refresh();
+      });
+    });
+
+    $('#btn-edit-water', this.container)?.addEventListener('click', () => {
+      this.openWaterEditSheet();
+    });
+  }
+
+  openWaterEditSheet() {
+    const current = this.waterLog?.amount || 0;
+    const unit = this.settings?.waterUnit || 'oz';
+    const html = `
+      <div class="water-edit-form">
+        <p class="settings-hint mb-3" style="padding: 0;">
+          Log or adjust total water intake for ${friendlyDate(this.selectedDate)}.
+        </p>
+        <div class="form-group">
+          <label>Total Water Intake (${unit})</label>
+          <input type="number" id="water-custom-amount" class="text-input" value="${current}" min="0" step="${unit === 'ml' ? 50 : 1}">
+        </div>
+      </div>
+    `;
+
+    const sheet = openSheet({
+      title: 'Water Intake',
+      html,
+      footer: `
+        <div class="btn-row">
+          <button class="btn btn-secondary flex-1" id="btn-water-reset">Reset to 0</button>
+          <button class="btn btn-primary flex-1" id="btn-water-save">Save Amount</button>
+        </div>
+      `,
+      onMount: (sheetApi) => {
+        const input = $('#water-custom-amount', sheetApi.body);
+        input?.focus();
+        input?.select();
+
+        $('#btn-water-save', sheetApi.footer)?.addEventListener('click', async () => {
+          const val = Math.max(0, num(input?.value, 0));
+          await repo.setWater(this.selectedDate, val);
+          sheet.close();
+          toast(`Water set to ${val} ${unit}`);
+          this.refresh();
+        });
+
+        $('#btn-water-reset', sheetApi.footer)?.addEventListener('click', async () => {
+          await repo.setWater(this.selectedDate, 0);
+          sheet.close();
+          toast('Water reset to 0');
+          this.refresh();
+        });
+      },
     });
   }
 

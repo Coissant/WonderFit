@@ -14,7 +14,7 @@
    ========================================================================== */
 
 export const DB_NAME = 'fittrack-db';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const SCHEMA = {
   settings:  { keyPath: 'id', indexes: [] },               // single doc: { id: 'user', ... }
@@ -24,8 +24,9 @@ export const SCHEMA = {
   staples:   { keyPath: 'id', indexes: [] },               // saved quick-add foods
   splits:    { keyPath: 'id', indexes: [] },               // training split definitions
   overrides: { keyPath: 'id', indexes: [] },               // per-date plan overrides (id = YYYY-MM-DD)
+  water:     { keyPath: 'id', indexes: ['date'] },         // daily water intake (id = YYYY-MM-DD)
   meta:      { keyPath: 'id', indexes: [] },               // device-local state (active workout, flags)
 };
 
 /** Collections included in JSON export/import (meta is device-local only). */
-export const BACKUP_COLLECTIONS = ['settings', 'exercises', 'workouts', 'foodLog', 'staples', 'splits', 'overrides'];
+export const BACKUP_COLLECTIONS = ['settings', 'exercises', 'workouts', 'foodLog', 'staples', 'splits', 'overrides', 'water'];

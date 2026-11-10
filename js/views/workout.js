@@ -15,7 +15,6 @@ import { repo } from '../store/repository.js';
 import { restTimer } from '../components/rest-timer.js';
 import { CATEGORIES } from '../data/exercises.js';
 import { openDayExerciseEditor } from '../components/day-exercise-editor.js';
-import { triggerWidgetSync } from '../services/widget-sync.js';
 
 class WorkoutView {
   container = null;
@@ -844,7 +843,6 @@ class WorkoutView {
     await repo.clearActiveWorkout();
     this.activeWorkout = null;
     restTimer.stop();
-    triggerWidgetSync();
 
     haptic([50, 80, 50]);
     toast(`Workout saved! ${fmtDuration(durationMs)} · ${totalVolume.toLocaleString()} ${unit}`, { type: 'success', duration: 4000 });

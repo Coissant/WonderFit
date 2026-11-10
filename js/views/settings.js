@@ -15,37 +15,11 @@ import { repo } from '../store/repository.js';
 import { ACCENT_PRESETS, applyTheme } from '../theme.js';
 import { DEFAULT_GEMINI_MODEL, normalizeModel, prettyModelName, geminiEndpoint } from '../data/gemini.js';
 import { openDayExerciseEditor } from '../components/day-exercise-editor.js';
-import { generateScriptableCode, triggerWidgetSync, normalizeFirebaseUrl } from '../services/widget-sync.js';
-
-async function copyToClipboard(text) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch (_) {}
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.top = '-9999px';
-    ta.style.left = '-9999px';
-    ta.setAttribute('readonly', '');
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    ta.remove();
-    return ok;
-  } catch (_) {
-    return false;
-  }
-}
 
 class SettingsView {
   container = null;
   settings = null;
   showApiKey = false;
-  showGistToken = false;
 
   async init(container) {
     this.container = container;
@@ -78,9 +52,9 @@ class SettingsView {
       </div>
 
       <div class="view-content settings-content">
-        <!-- 1. NUTRITION GOALS (4 METRICS ONLY) -->
+        <!-- 1. NUTRITION & WATER GOALS -->
         <div class="settings-group">
-          <div class="settings-group-title">Daily Nutrition Goals (4 Metrics Only)</div>
+          <div class="settings-group-title">Daily Nutrition & Water Goals</div>
           <div class="settings-card card">
             <div class="settings-row">
               <span class="settings-label">Calories</span>
@@ -108,6 +82,16 @@ class SettingsView {
               <div class="settings-input-group">
                 <input type="number" id="goal-sod" class="text-input settings-num-input" value="${s.sodiumGoal || 2300}" min="100" step="50">
                 <span class="settings-unit">mg</span>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Water Intake</span>
+              <div class="settings-input-group">
+                <input type="number" id="goal-water" class="text-input settings-num-input" value="${s.waterGoal || 80}" min="0" step="5">
+                <select id="goal-water-unit" class="text-input select-input settings-unit-select">
+                  <option value="oz" ${(s.waterUnit || 'oz') === 'oz' ? 'selected' : ''}>oz</option>
+                  <option value="ml" ${s.waterUnit === 'ml' ? 'selected' : ''}>ml</option>
+                </select>
               </div>
             </div>
           </div>
@@ -225,82 +209,6 @@ class SettingsView {
           </div>
         </div>
 
-        <!-- 6. IOS HOME SCREEN WIDGET (SCRIPTABLE) -->
-        <div class="settings-group">
-          <div class="settings-group-title">iOS Home Screen Widget (Scriptable)</div>
-          <div class="settings-card card">
-            <p class="settings-hint">
-              Display today's 4 Nutrition metrics (Calories, Protein, Sugar, Sodium) and scheduled Workout Split live on your iPhone Home Screen using the free <strong>Scriptable</strong> iOS app.
-            </p>
-
-            <div class="settings-row">
-              <span class="settings-label">Auto-Sync Widget Cloud Data</span>
-              <label class="toggle-switch-label">
-                <input type="checkbox" id="widget-sync-toggle" ${s.widgetSyncEnabled ? 'checked' : ''}>
-                <span></span>
-              </label>
-            </div>
-
-            <div class="settings-field">
-              <label class="settings-field-label" for="widget-provider-select">Sync Provider</label>
-              <select id="widget-provider-select" class="text-input select-input">
-                <option value="firebase" ${s.widgetSyncProvider !== 'gist' ? 'selected' : ''}>Firebase Realtime Database (Free & Instant PUT)</option>
-                <option value="gist" ${s.widgetSyncProvider === 'gist' ? 'selected' : ''}>GitHub Gist (Personal Token + Gist ID)</option>
-              </select>
-            </div>
-
-            <div id="widget-firebase-fields" class="${s.widgetSyncProvider === 'gist' ? 'hidden' : ''}">
-              <div class="settings-field">
-                <label class="settings-field-label" for="widget-firebase-url">Firebase Database URL</label>
-                <input type="url" id="widget-firebase-url" class="text-input api-key-input"
-                  placeholder="https://<YOUR-PROJECT>-default-rtdb.firebaseio.com/fittrack-widget.json"
-                  value="${esc(s.widgetFirebaseUrl || '')}"
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                <p class="settings-field-hint">
-                  Your free Firebase RTDB endpoint. Every time you log food, finish a workout, or update your split, a tiny JSON payload is HTTP PUT directly here.
-                </p>
-              </div>
-            </div>
-
-            <div id="widget-gist-fields" class="${s.widgetSyncProvider !== 'gist' ? 'hidden' : ''}">
-              <div class="settings-field">
-                <label class="settings-field-label" for="widget-gist-token">GitHub Token (Gist Scope)</label>
-                <div class="api-key-row no-pad">
-                  <input type="${this.showGistToken ? 'text' : 'password'}" id="widget-gist-token" class="text-input api-key-input"
-                    placeholder="ghp_..." value="${esc(s.widgetGistToken || '')}"
-                    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                  <button class="icon-btn" id="btn-toggle-gist-token" title="Show/Hide Token" aria-label="Toggle Gist Token Visibility">
-                    ${icon(this.showGistToken ? 'eyeOff' : 'eye', 18)}
-                  </button>
-                </div>
-              </div>
-              <div class="settings-field">
-                <label class="settings-field-label" for="widget-gist-id">Gist ID</label>
-                <input type="text" id="widget-gist-id" class="text-input api-key-input"
-                  placeholder="e.g. 7f8a9b2c3d4e5f6a..." value="${esc(s.widgetGistId || '')}"
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                <p class="settings-field-hint">
-                  Updates <code>fittrack-widget.json</code> inside this Gist whenever data changes.
-                </p>
-              </div>
-            </div>
-
-            <div class="widget-actions-stack">
-              <button class="btn btn-primary btn-block" id="btn-copy-widget-code">
-                ${icon('layers', 18)} Copy Scriptable Widget Code
-              </button>
-              <div class="btn-row">
-                <button class="btn btn-secondary flex-1" id="btn-test-widget-sync">
-                  ${icon('repeat', 16)} Test Sync Now
-                </button>
-                <button class="btn btn-secondary flex-1" id="btn-widget-setup-guide">
-                  ${icon('info', 16)} Setup Guide
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- 6. DATA MANAGEMENT: EXPORT / IMPORT -->
         <div class="settings-group">
           <div class="settings-group-title">Data Backup & Restore</div>
@@ -343,13 +251,14 @@ class SettingsView {
         proteinGoal: num($('#goal-pro', this.container)?.value, 160),
         sugarGoal: num($('#goal-sug', this.container)?.value, 45),
         sodiumGoal: num($('#goal-sod', this.container)?.value, 2300),
+        waterGoal: num($('#goal-water', this.container)?.value, 80),
+        waterUnit: $('#goal-water-unit', this.container)?.value || 'oz',
       };
       this.settings = await repo.saveSettings(updates);
       toast('Goals updated', { type: 'success' });
-      triggerWidgetSync();
     };
 
-    ['#goal-cal', '#goal-pro', '#goal-sug', '#goal-sod'].forEach((sel) => {
+    ['#goal-cal', '#goal-pro', '#goal-sug', '#goal-sod', '#goal-water', '#goal-water-unit'].forEach((sel) => {
       $(sel, this.container)?.addEventListener('change', saveGoals);
     });
 
@@ -494,90 +403,7 @@ class SettingsView {
       this.openCustomExercisesSheet();
     });
 
-    // 9. iOS Home Screen Widget (Scriptable) Cloud Sync Handlers
-    const saveWidgetInputs = async () => {
-      const provider = $('#widget-provider-select', this.container)?.value || 'firebase';
-      const firebaseUrl = $('#widget-firebase-url', this.container)?.value?.trim() || '';
-      const gistToken = $('#widget-gist-token', this.container)?.value?.trim() || '';
-      const gistId = $('#widget-gist-id', this.container)?.value?.trim() || '';
-      const enabled = $('#widget-sync-toggle', this.container)?.checked || false;
-
-      this.settings = await repo.saveSettings({
-        widgetSyncEnabled: enabled,
-        widgetSyncProvider: provider,
-        widgetFirebaseUrl: firebaseUrl,
-        widgetGistToken: gistToken,
-        widgetGistId: gistId,
-      });
-      return this.settings;
-    };
-
-    $('#widget-sync-toggle', this.container)?.addEventListener('change', async (e) => {
-      const enabled = e.target.checked;
-      await saveWidgetInputs();
-      toast(`Widget cloud sync ${enabled ? 'enabled' : 'disabled'}`);
-      if (enabled) {
-        triggerWidgetSync();
-      }
-    });
-
-    $('#widget-provider-select', this.container)?.addEventListener('change', async (e) => {
-      const val = e.target.value;
-      const fbBox = $('#widget-firebase-fields', this.container);
-      const gistBox = $('#widget-gist-fields', this.container);
-      if (fbBox && gistBox) {
-        fbBox.classList.toggle('hidden', val !== 'firebase');
-        gistBox.classList.toggle('hidden', val !== 'gist');
-      }
-      await saveWidgetInputs();
-    });
-
-    ['#widget-firebase-url', '#widget-gist-token', '#widget-gist-id'].forEach((sel) => {
-      $(sel, this.container)?.addEventListener('change', async () => {
-        await saveWidgetInputs();
-        toast('Widget sync settings saved');
-        if (this.settings.widgetSyncEnabled) {
-          triggerWidgetSync();
-        }
-      });
-    });
-
-    $('#btn-toggle-gist-token', this.container)?.addEventListener('click', () => {
-      this.showGistToken = !this.showGistToken;
-      const input = $('#widget-gist-token', this.container);
-      if (input) input.type = this.showGistToken ? 'text' : 'password';
-      const btn = $('#btn-toggle-gist-token', this.container);
-      if (btn) btn.innerHTML = icon(this.showGistToken ? 'eyeOff' : 'eye', 18);
-    });
-
-    $('#btn-copy-widget-code', this.container)?.addEventListener('click', async () => {
-      await saveWidgetInputs();
-      const code = generateScriptableCode(this.settings);
-      const copied = await copyToClipboard(code);
-      if (copied) {
-        haptic(25);
-        toast('Scriptable widget code copied! ✓', { type: 'success' });
-      }
-      this.openWidgetCodeModal(code, copied);
-    });
-
-    $('#btn-test-widget-sync', this.container)?.addEventListener('click', async () => {
-      await saveWidgetInputs();
-      toast('Testing widget cloud sync...');
-      try {
-        const res = await triggerWidgetSync({ manual: true });
-        haptic([30, 60]);
-        toast(`Synced to ${res.destination} ✓`, { type: 'success', duration: 3500 });
-      } catch (err) {
-        toast(`Sync error: ${err.message}`, { type: 'danger', duration: 4500 });
-      }
-    });
-
-    $('#btn-widget-setup-guide', this.container)?.addEventListener('click', () => {
-      this.openWidgetSetupGuideModal();
-    });
-
-    // 10. Export JSON
+    // 9. Export JSON
     $('#btn-export-json', this.container)?.addEventListener('click', async () => {
       try {
         const backupData = await repo.exportAllData();
@@ -707,100 +533,6 @@ class SettingsView {
         };
         bindDeletes();
       },
-    });
-  }
-
-  openWidgetCodeModal(code, alreadyCopied) {
-    const html = `
-      <div class="widget-modal-wrap">
-        <p class="settings-field-hint mb-2">
-          ${alreadyCopied ? '✓ <strong>Code has been copied to your clipboard!</strong>' : 'Select all code below to copy:'}
-        </p>
-        <textarea id="scriptable-code-box" class="widget-code-textarea" readonly spellcheck="false" autocorrect="off" autocapitalize="off">${esc(code)}</textarea>
-
-        <div class="step-guide-list mt-3">
-          <div class="step-guide-item">
-            <span class="step-guide-num">1</span>
-            <div class="step-guide-text">
-              <strong>Open Scriptable on your iPhone</strong>
-              <p>Install free from the iOS App Store if needed, and open it.</p>
-            </div>
-          </div>
-          <div class="step-guide-item">
-            <span class="step-guide-num">2</span>
-            <div class="step-guide-text">
-              <strong>Create a New Script</strong>
-              <p>Tap <strong>+</strong>, name it <strong>FitTrack</strong>, paste this code, and tap Done.</p>
-            </div>
-          </div>
-          <div class="step-guide-item">
-            <span class="step-guide-num">3</span>
-            <div class="step-guide-text">
-              <strong>Add Widget to Home Screen</strong>
-              <p>Long-press your iPhone Home Screen, tap <strong>+</strong> in top-left, pick <strong>Scriptable</strong> (Medium or Small), and choose <strong>FitTrack</strong>!</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    openSheet({
-      title: 'iOS Scriptable Widget Code',
-      html,
-      footer: `
-        <button class="btn btn-primary btn-block" id="btn-copy-modal-code">
-          ${icon('layers', 16)} Copy Code Again
-        </button>
-      `,
-      onMount: (sheetApi) => {
-        const ta = $('#scriptable-code-box', sheetApi.body);
-        ta?.addEventListener('focus', () => ta.select());
-        $('#btn-copy-modal-code', sheetApi.footer)?.addEventListener('click', async () => {
-          const ok = await copyToClipboard(code);
-          haptic(20);
-          toast(ok ? 'Scriptable code copied!' : 'Could not copy — please select and copy text above.');
-        });
-      },
-    });
-  }
-
-  openWidgetSetupGuideModal() {
-    const html = `
-      <div class="step-guide-list">
-        <div class="step-guide-item">
-          <span class="step-guide-num">1</span>
-          <div class="step-guide-text">
-            <strong>Choose Your Sync Endpoint</strong>
-            <p><strong>Option A (Recommended & 100% Free): Firebase Realtime Database</strong><br>
-            • Go to <a href="https://console.firebase.google.com" target="_blank" rel="noopener" class="btn-text-accent">console.firebase.google.com ↗</a> and create a free project.<br>
-            • Click <strong>Build > Realtime Database > Create Database</strong>.<br>
-            • Under <strong>Rules</strong>, set read & write to true: <code>{ "rules": { ".read": true, ".write": true } }</code>.<br>
-            • Copy your database URL (e.g. <code>https://your-project-default-rtdb.firebaseio.com/fittrack-widget.json</code>) and paste it into Settings.<br><br>
-            <strong>Option B: GitHub Gist</strong><br>
-            • Generate a GitHub personal access token with <code>gist</code> permission.<br>
-            • Create a Gist, copy its ID, and paste into Settings.</p>
-          </div>
-        </div>
-        <div class="step-guide-item">
-          <span class="step-guide-num">2</span>
-          <div class="step-guide-text">
-            <strong>Turn on "Auto-Sync Widget Cloud Data"</strong>
-            <p>FitTrack will now automatically push today's Calories, Protein, Sugar, Sodium, and scheduled Workout Split every time you log food, complete a session, or change your split.</p>
-          </div>
-        </div>
-        <div class="step-guide-item">
-          <span class="step-guide-num">3</span>
-          <div class="step-guide-text">
-            <strong>Install Scriptable on your iPhone</strong>
-            <p>Download the free <strong>Scriptable</strong> app from the iOS App Store. Tap <strong>Copy Scriptable Widget Code</strong> in FitTrack, paste it into a new script named <strong>FitTrack</strong>, and add the widget to your Home Screen!</p>
-          </div>
-        </div>
-      </div>
-    `;
-
-    openSheet({
-      title: 'iOS Widget Setup Guide',
-      html,
     });
   }
 }

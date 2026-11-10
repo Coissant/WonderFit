@@ -2223,13 +2223,132 @@ input, select, textarea {
 }
 
 /* ==========================================================================
-   WIDGET & SCRIPTABLE INTEGRATION STYLES
+   WATER INTAKE CARD
    ========================================================================== */
-.widget-actions-stack {
-  padding: 12px 16px 16px;
+.water-card {
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(10, 132, 255, 0.09) 0%, var(--surface-1) 100%);
+  border: 1px solid rgba(10, 132, 255, 0.25);
+  border-radius: var(--radius-md);
+}
+
+[data-theme="oled"] .water-card {
+  background: linear-gradient(135deg, rgba(10, 132, 255, 0.12) 0%, #06090e 100%);
+  border-color: rgba(10, 132, 255, 0.3);
+}
+
+.water-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.water-title-wrap {
+  display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.water-badge-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(10, 132, 255, 0.18);
+  color: #0A84FF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.water-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.water-stats-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.water-val-current {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0A84FF;
+}
+
+.water-val-goal {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.water-pct-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: rgba(10, 132, 255, 0.18);
+  color: #0A84FF;
+}
+
+.water-pct-tag.done {
+  background: rgba(48, 209, 88, 0.2);
+  color: #30D158;
+}
+
+.water-progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.water-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0A84FF 0%, #40C8E0 100%);
+  border-radius: 4px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.water-quick-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.water-quick-btn {
+  flex: 1;
+  min-width: 68px;
+  font-size: 13px !important;
+  padding: 7px 10px;
+  font-weight: 600;
+}
+
+.water-btn-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+.water-action-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-unit-select {
+  width: 68px;
+  padding: 4px 8px;
+  font-size: 14px !important;
+  font-weight: 600;
 }
 
 .btn-row {
@@ -2242,60 +2361,137 @@ input, select, textarea {
   flex: 1;
 }
 
-.widget-code-textarea {
-  width: 100%;
-  height: 240px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 13px !important;
-  line-height: 1.45;
-  background-color: var(--surface-2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px;
-  white-space: pre;
-  overflow-wrap: normal;
-  overflow-x: auto;
-  resize: vertical;
-}
-
-.step-guide-list {
+/* ==========================================================================
+   AI FOOD SCAN PROGRESS MODAL
+   ========================================================================== */
+.scan-progress-wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px 0;
+  align-items: center;
+  text-align: center;
+  padding: 4px 4px 12px;
+  gap: 14px;
 }
 
-.step-guide-item {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.step-guide-num {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background-color: rgba(var(--accent-rgb), 0.15);
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 13px;
+.scan-thumb-container {
+  position: relative;
+  width: 130px;
+  height: 130px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.3);
+  background-color: var(--surface-2);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
 
-.step-guide-text {
-  font-size: 14px;
-  line-height: 1.4;
+.scan-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-radar-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: scanRadar 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes scanRadar {
+  0% { transform: translateY(0); opacity: 0.8; }
+  100% { transform: translateY(127px); opacity: 1; }
+}
+
+.scan-status-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scan-status-title {
+  font-size: 17px;
+  font-weight: 700;
   color: var(--text);
 }
 
-.step-guide-text p {
+.scan-status-subtitle {
+  font-size: 13px;
   color: var(--text-muted);
-  font-size: 12.5px;
-  margin-top: 2px;
+}
+
+.scan-timer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-steps-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.scan-step-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: color 0.2s ease;
+}
+
+.scan-step-row.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.scan-step-row.done {
+  color: var(--accent);
+}
+
+.scan-step-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+}
+
+.scan-step-row.active .scan-step-dot {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: pulse 1.2s infinite;
+}
+
+.scan-step-row.done .scan-step-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 700;
 }
 
 /* ==========================================================================
